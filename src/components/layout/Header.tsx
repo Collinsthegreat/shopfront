@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { ShoppingBag, Menu, X, User } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuth } from "@/hooks/useAuth";
 import { AuthUser } from "@/types";
 
 export interface HeaderProps {
@@ -13,8 +14,12 @@ export interface HeaderProps {
   onSignOut?: () => Promise<void>;
 }
 
-export function Header({ user, onSignOut }: HeaderProps): React.JSX.Element {
+export function Header({ user: propUser, onSignOut: propSignOut }: HeaderProps): React.JSX.Element {
   const pathname = usePathname();
+  const auth = useAuth();
+  const user = propUser !== undefined ? propUser : auth.user;
+  const onSignOut = propSignOut || auth.signOut;
+
   const { setDrawerOpen, itemsCount, isMounted } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState<boolean>(false);
