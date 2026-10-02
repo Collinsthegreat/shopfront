@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="100%" height="100%">
+      <rect width="600" height="600" fill="#f4f4f5"/>
+      <g transform="translate(260, 120)">
+        <path d="M20 0 L60 0 L70 300 L50 360 L30 360 L10 300 Z" fill="#71717a" />
+        <rect x="30" y="40" width="20" height="60" rx="10" fill="#3f3f46"/>
+        <path d="M30 180 Q45 200 60 180 L60 210 Q45 230 30 210 Z" fill="#27272a"/>
+        <rect x="35" y="260" width="10" height="30" rx="3" fill="#a1a1aa"/>
+      </g>
+    </svg>
