@@ -98,15 +98,15 @@ export function CartDrawer(): React.JSX.Element | null {
               Your cart is empty
             </h3>
             <p className="text-sm text-text-secondary max-w-xs mb-6">
-              Looks like you haven&apos;t added any minimalist goods to your cart yet.
+              Looks like you haven&apos;t added any building materials to your cart yet.
             </p>
             <Button
               onClick={() => setDrawerOpen(false)}
               variant="primary"
               className="w-full max-w-xs"
             >
-              <Link href="/shop" className="w-full h-full flex items-center justify-center">
-                Explore Catalog
+              <Link href="/buy-materials" className="w-full h-full flex items-center justify-center">
+                Explore Materials
               </Link>
             </Button>
           </div>
@@ -132,7 +132,7 @@ export function CartDrawer(): React.JSX.Element | null {
                   </span>
                 </div>
                 <p className="text-xs text-text-tertiary">
-                  Delivery and taxes calculated at checkout.
+                  Site logistics and haulage calculated at checkout.
                 </p>
               </div>
 

@@ -9,7 +9,7 @@ describe("formatMoney", () => {
   });
 
   it("formats zero correctly", () => {
-    expect(formatMoney(0)).toContain("0.00");
+    expect(formatMoney(0)).toContain("0");
   });
 
   it("formats large amounts correctly", () => {
@@ -25,14 +25,19 @@ describe("formatMoney", () => {
 
   it("correctly handles minor unit conversion (100 kobo = 1 Naira)", () => {
     const result = formatMoney(100); // 1 Naira
-    expect(result).toContain("1.00");
+    expect(result).toContain("1");
+  });
+
+  it("correctly formats fractional kobo when present", () => {
+    const result = formatMoney(150); // 1.50 Naira
+    expect(result).toContain("1.5");
   });
 });
 
 describe("generateOrderNumber", () => {
-  it("returns a string matching SF-YYYYMMDD-NNNN format", () => {
+  it("returns a string matching BM-YYYYMMDD-NNNN format", () => {
     const orderNum = generateOrderNumber(new Date("2026-10-02"));
-    expect(orderNum).toMatch(/^SF-20261002-\d{4}$/);
+    expect(orderNum).toMatch(/^BM-20261002-\d{4}$/);
   });
 
   it("generates different numbers on consecutive calls", () => {
@@ -40,8 +45,8 @@ describe("generateOrderNumber", () => {
     const b = generateOrderNumber();
     // Very likely to differ due to random suffix
     // At minimum both should be valid format
-    expect(a).toMatch(/^SF-\d{8}-\d{4}$/);
-    expect(b).toMatch(/^SF-\d{8}-\d{4}$/);
+    expect(a).toMatch(/^BM-\d{8}-\d{4}$/);
+    expect(b).toMatch(/^BM-\d{8}-\d{4}$/);
   });
 
   it("uses current date by default", () => {
@@ -50,6 +55,6 @@ describe("generateOrderNumber", () => {
     const mm = (now.getMonth() + 1).toString().padStart(2, "0");
     const dd = now.getDate().toString().padStart(2, "0");
     const orderNum = generateOrderNumber();
-    expect(orderNum).toContain(`SF-${yyyy}${mm}${dd}-`);
+    expect(orderNum).toContain(`BM-${yyyy}${mm}${dd}-`);
   });
 });

@@ -15,7 +15,7 @@ export function ThemeToggle(): React.JSX.Element {
   if (!mounted) {
     return (
       <div
-        className="w-10 h-10 rounded-md border border-border flex items-center justify-center text-text-tertiary"
+        className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-border flex items-center justify-center text-text-tertiary"
         aria-hidden="true"
       >
         <span className="w-4 h-4" />
@@ -29,14 +29,14 @@ export function ThemeToggle(): React.JSX.Element {
     <button
       onClick={toggleTheme}
       type="button"
-      className="w-10 h-10 min-h-[40px] rounded-md border border-border bg-surface text-text-primary hover:bg-canvas transition-colors flex items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-border bg-surface text-text-primary hover:border-accent hover:bg-canvas transition-all flex items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent shadow-sm"
       aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
       title={isDark ? "Switch to light theme" : "Switch to dark theme"}
     >
       {isDark ? (
-        <Sun className="w-4 h-4 text-text-primary" />
+        <Sun className="w-4 h-4 text-accent transition-transform hover:rotate-45" />
       ) : (
-        <Moon className="w-4 h-4 text-text-primary" />
+        <Moon className="w-4 h-4 text-text-primary transition-transform hover:-rotate-12" />
       )}
     </button>
   );

@@ -1,0 +1,394 @@
+-- ====================================================================
+-- BUILDMART COMPLETE DATABASE SETUP (Schema + Migration + 24 Brands + 48 Products)
+-- Paste and Run this entire query in Supabase Dashboard -> SQL Editor
+-- ====================================================================
+
+-- ====================================================================
+-- Migration: 20261003000000_buildmart_schema.sql
+-- Description: BuildMart schema update — categories, brands, updated products,
+--              unit snapshots on order_items, and atomic create_order RPC
+-- ====================================================================
+
+-- 1. Categories Table
+CREATE TABLE IF NOT EXISTS public.categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL,
+  description TEXT,
+  icon TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 2. Brands Table
+CREATE TABLE IF NOT EXISTS public.brands (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL,
+  description TEXT,
+  origin TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 3. Update Products Table
+-- Remove old categories check constraint
+ALTER TABLE public.products DROP CONSTRAINT IF EXISTS products_category_check;
+
+-- Add new columns if not present
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS brand_id TEXT;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS unit TEXT NOT NULL DEFAULT 'unit';
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS specs JSONB DEFAULT '{}'::jsonb;
+
+-- Drop old foreign key constraint if exists to avoid insertion conflicts
+ALTER TABLE public.products DROP CONSTRAINT IF EXISTS fk_products_brand;
+
+-- 4. Update Order Items Table with unit_snapshot
+ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS unit_snapshot TEXT NOT NULL DEFAULT 'unit';
+
+-- 5. Enable RLS on categories and brands
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Categories are publicly readable" ON public.categories;
+CREATE POLICY "Categories are publicly readable"
+  ON public.categories
+  FOR SELECT
+  USING (true);
+
+DROP POLICY IF EXISTS "Brands are publicly readable" ON public.brands;
+CREATE POLICY "Brands are publicly readable"
+  ON public.brands
+  FOR SELECT
+  USING (true);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_products_brand_id ON public.products(brand_id);
+CREATE INDEX IF NOT EXISTS idx_categories_slug ON public.categories(slug);
+CREATE INDEX IF NOT EXISTS idx_brands_slug ON public.brands(slug);
+
+-- ====================================================================
+-- 6. Updated Atomic create_order PostgreSQL RPC Transaction
+--    - Uses BM- prefix (e.g. BM-20261003-4921)
+--    - Handles unit_snapshot in order_items
+--    - Default haulage fee ₦35,000 (3500000 kobo)
+-- ====================================================================
+
+CREATE OR REPLACE FUNCTION public.create_order(
+  p_user_id UUID,
+  p_items JSONB,
+  p_delivery JSONB,
+  p_idempotency_key TEXT DEFAULT NULL,
+  p_delivery_fee BIGINT DEFAULT 3500000
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_order_id UUID;
+  v_order_number TEXT;
+  v_subtotal BIGINT := 0;
+  v_total BIGINT := 0;
+  v_item JSONB;
+  v_product RECORD;
+  v_requested_qty INTEGER;
+  v_prod_id TEXT;
+  v_customer_name TEXT;
+  v_phone TEXT;
+  v_address TEXT;
+  v_city TEXT;
+  v_state TEXT;
+  v_note TEXT;
+  v_existing_order RECORD;
+  v_order_json JSONB;
+BEGIN
+  -- 1. Idempotency Check: if idempotency key was previously processed, return that order
+  IF p_idempotency_key IS NOT NULL AND trim(p_idempotency_key) <> '' THEN
+    SELECT * INTO v_existing_order FROM public.orders WHERE idempotency_key = p_idempotency_key LIMIT 1;
+    IF FOUND THEN
+      SELECT jsonb_build_object(
+        'order', row_to_json(v_existing_order),
+        'items', (SELECT jsonb_agg(row_to_json(oi)) FROM public.order_items oi WHERE oi.order_id = v_existing_order.id),
+        'is_idempotent', true
+      ) INTO v_order_json;
+      RETURN v_order_json;
+    END IF;
+  END IF;
+
+  -- 2. Extract and validate delivery details
+  v_customer_name := trim(p_delivery->>'fullName');
+  v_phone := trim(p_delivery->>'phone');
+  v_address := trim(p_delivery->>'address');
+  v_city := trim(p_delivery->>'city');
+  v_state := trim(p_delivery->>'state');
+  v_note := p_delivery->>'note';
+
+  IF v_customer_name IS NULL OR length(v_customer_name) < 2 THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: Full name must be at least 2 characters';
+  END IF;
+
+  IF v_phone IS NULL OR length(v_phone) < 8 THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: Valid phone number is required';
+  END IF;
+
+  IF v_address IS NULL OR length(v_address) < 5 THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: Delivery address is required';
+  END IF;
+
+  IF jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: Cart must contain at least one item';
+  END IF;
+
+  -- 3. Lock product rows and authoritative stock & price check
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+  LOOP
+    v_prod_id := v_item->>'productId';
+    v_requested_qty := (v_item->>'quantity')::INTEGER;
+
+    IF v_requested_qty IS NULL OR v_requested_qty <= 0 THEN
+      RAISE EXCEPTION 'VALIDATION_ERROR: Invalid item quantity';
+    END IF;
+
+    SELECT id, name, price_kobo, stock, unit INTO v_product
+    FROM public.products
+    WHERE id = v_prod_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'PRODUCT_NOT_FOUND: Product "%" does not exist', v_prod_id;
+    END IF;
+
+    IF v_product.stock < v_requested_qty THEN
+      RAISE EXCEPTION 'OUT_OF_STOCK: "%" has only % units remaining (requested %)', v_product.name, v_product.stock, v_requested_qty;
+    END IF;
+
+    -- Authoritative subtotal calculation
+    v_subtotal := v_subtotal + (v_product.price_kobo * v_requested_qty);
+  END LOOP;
+
+  -- 4. Decrement Stock atomically
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+  LOOP
+    v_prod_id := v_item->>'productId';
+    v_requested_qty := (v_item->>'quantity')::INTEGER;
+
+    UPDATE public.products
+    SET stock = stock - v_requested_qty
+    WHERE id = v_prod_id;
+  END LOOP;
+
+  -- 5. Calculate total
+  v_total := v_subtotal + p_delivery_fee;
+
+  -- 6. Generate Human-Friendly Order Number for BuildMart (e.g. BM-20261003-4921)
+  v_order_number := 'BM-' || to_char(timezone('utc', now()), 'YYYYMMDD') || '-' || lpad(floor(random() * 9000 + 1000)::text, 4, '0');
+
+  -- 7. Insert into orders table
+  INSERT INTO public.orders (
+    order_number,
+    user_id,
+    status,
+    subtotal,
+    delivery_fee,
+    total,
+    customer_name,
+    phone,
+    address,
+    city,
+    state,
+    note,
+    idempotency_key
+  ) VALUES (
+    v_order_number,
+    p_user_id,
+    'pending',
+    v_subtotal,
+    p_delivery_fee,
+    v_total,
+    v_customer_name,
+    v_phone,
+    v_address,
+    v_city,
+    v_state,
+    v_note,
+    p_idempotency_key
+  )
+  RETURNING id INTO v_order_id;
+
+  -- 8. Insert into order_items table using authoritative snapshot values (including unit_snapshot)
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+  LOOP
+    v_prod_id := v_item->>'productId';
+    v_requested_qty := (v_item->>'quantity')::INTEGER;
+
+    SELECT id, name, price_kobo, unit INTO v_product
+    FROM public.products
+    WHERE id = v_prod_id;
+
+    INSERT INTO public.order_items (
+      order_id,
+      product_id,
+      name_snapshot,
+      unit_price_snapshot,
+      unit_snapshot,
+      quantity
+    ) VALUES (
+      v_order_id,
+      v_prod_id,
+      v_product.name,
+      v_product.price_kobo,
+      COALESCE(v_product.unit, 'unit'),
+      v_requested_qty
+    );
+  END LOOP;
+
+  -- 9. Return structured order and items JSON
+  SELECT jsonb_build_object(
+    'order', (SELECT row_to_json(o) FROM public.orders o WHERE o.id = v_order_id),
+    'items', (SELECT jsonb_agg(row_to_json(oi)) FROM public.order_items oi WHERE oi.order_id = v_order_id),
+    'is_idempotent', false
+  ) INTO v_order_json;
+
+  RETURN v_order_json;
+END;
+$$;
+
+
+-- ====================================================================
+-- Seed: 48 Authentic Building Materials, 24 Brands & 11 Categories for BuildMart
+-- ====================================================================
+
+-- 1. Insert Categories
+INSERT INTO public.categories (id, name, slug, description, icon)
+VALUES
+  ('cat-cement-binders', 'Cement & Binders', 'cement-binders', 'Authentic Cement & Binders with certified industrial quality standards.', 'Package'),
+  ('cat-steel-rods', 'Steel & Iron Rods', 'steel-rods', 'Authentic Steel & Iron Rods with certified industrial quality standards.', 'Layers'),
+  ('cat-blocks-bricks', 'Blocks & Bricks', 'blocks-bricks', 'Authentic Blocks & Bricks with certified industrial quality standards.', 'Grid'),
+  ('cat-sand-aggregates', 'Sand & Aggregates', 'sand-aggregates', 'Authentic Sand & Aggregates with certified industrial quality standards.', 'Mountain'),
+  ('cat-roofing', 'Roofing & Ceiling', 'roofing', 'Authentic Roofing & Ceiling with certified industrial quality standards.', 'Home'),
+  ('cat-tiles-flooring', 'Tiles & Flooring', 'tiles-flooring', 'Authentic Tiles & Flooring with certified industrial quality standards.', 'LayoutGrid'),
+  ('cat-paints-finishes', 'Paints & Finishes', 'paints-finishes', 'Authentic Paints & Finishes with certified industrial quality standards.', 'Paintbrush'),
+  ('cat-plumbing', 'Plumbing & Sanitary', 'plumbing', 'Authentic Plumbing & Sanitary with certified industrial quality standards.', 'Droplet'),
+  ('cat-electrical', 'Electrical & Lighting', 'electrical', 'Authentic Electrical & Lighting with certified industrial quality standards.', 'Zap'),
+  ('cat-doors-hardware', 'Doors & Hardware', 'doors-hardware', 'Authentic Doors & Hardware with certified industrial quality standards.', 'Shield'),
+  ('cat-tools-scaffolding', 'Tools & Site Gear', 'tools-scaffolding', 'Authentic Tools & Site Gear with certified industrial quality standards.', 'Wrench')
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  slug = EXCLUDED.slug,
+  description = EXCLUDED.description,
+  icon = EXCLUDED.icon;
+
+-- 2. Insert Brands (All 24 Manufacturers)
+INSERT INTO public.brands (id, name, slug, description, origin)
+VALUES
+  ('dangote', 'Dangote Cement', 'dangote', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('bua', 'BUA Group', 'bua', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('lafarge', 'Lafarge Africa', 'lafarge', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('sika', 'Sika Construction Chemicals', 'sika', 'Certified manufacturer of building products.', 'Switzerland'),
+  ('super-snow', 'Super Snow White Cement', 'super-snow', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('tiger-tmt', 'Tiger TMT Steel', 'tiger-tmt', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('prime-steel', 'Prime Steel', 'prime-steel', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('buildmart-certified', 'BuildMart Certified Blocks & Materials', 'buildmart-certified', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('buildmart-quarry', 'BuildMart Direct Quarry Aggregates', 'buildmart-quarry', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('tower-aluminium', 'Tower Aluminium', 'tower-aluminium', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('nigerite', 'Nigerite Roofing', 'nigerite', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('cdk', 'CDK Integrated Industries', 'cdk', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('royal', 'Royal Ceramics', 'royal', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('berger', 'Berger Paints', 'berger', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('dulux', 'Dulux Paints', 'dulux', 'Certified manufacturer of building products.', 'United Kingdom'),
+  ('meyer', 'Meyer Paints', 'meyer', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('geepee', 'GeePee Tanks', 'geepee', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('twyford', 'Twyford Sanitaryware', 'twyford', 'Certified manufacturer of building products.', 'United Kingdom'),
+  ('coleman', 'Coleman Wires & Cables', 'coleman', 'Certified manufacturer of building products.', 'Nigeria'),
+  ('schneider', 'Schneider Electric', 'schneider', 'Certified manufacturer of building products.', 'France'),
+  ('philips', 'Philips Lighting', 'philips', 'Certified manufacturer of building products.', 'Netherlands'),
+  ('yale', 'Yale Hardware', 'yale', 'Certified manufacturer of building products.', 'USA'),
+  ('ingco', 'INGCO Tools', 'ingco', 'Certified manufacturer of building products.', 'Global'),
+  ('total', 'Total Tools', 'total', 'Certified manufacturer of building products.', 'Global')
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  slug = EXCLUDED.slug,
+  description = EXCLUDED.description,
+  origin = EXCLUDED.origin;
+
+-- 3. Insert Products (All 48 Construction Materials)
+INSERT INTO public.products (id, slug, name, brand_id, description, price_kobo, currency, category, unit, image_url, stock, featured, specs)
+VALUES
+  ('bm-cem-001', 'dangote-3x-cement-50kg', 'Dangote 3X Cement 50kg (Grade 42.5R)', 'dangote', 'Dangote 3X (Extra Strength, Extra Life, Extra Yield) is Nigeria''s most trusted Grade 42.5R cement. Engineered for heavy-duty structural load bearing, columns, suspended slabs, foundations, and high-yield block making with reduced setting time.', 950000, 'NGN', 'cement-binders', 'bag', '/products/dangote-3x-cement-50kg.webp', 450, true, '{"Grade":"42.5R (Rapid Hardening)","Unit Weight":"50 kg","Standard Compliance":"NIS 444-1:2014","Setting Time (Initial)":"75 minutes","Compressive Strength (28 Days)":"≥ 42.5 MPa","Packaging":"3-ply moisture-resistant paper bag"}'::jsonb),
+  ('bm-cem-002', 'bua-super-cement-50kg', 'BUA Super Cement 50kg (Grade 42.5N)', 'bua', 'BUA Super Cement 42.5N is manufactured using state-of-the-art European dry-process technology. Known for exceptional early-age strength, superior spread yield, and smooth plaster finish for residential and industrial civil works.', 920000, 'NGN', 'cement-binders', 'bag', '/products/bua-super-cement-50kg.webp', 320, true, '{"Grade":"42.5N","Unit Weight":"50 kg","Standard Compliance":"NIS 444-1:2018","Setting Time":"90 minutes","Ideal For":"Beams, lintels, paving, screeding"}'::jsonb),
+  ('bm-cem-003', 'lafarge-elephant-supaset-cement-50kg', 'Lafarge Elephant Supaset Cement 50kg', 'lafarge', 'Lafarge Elephant Supaset is custom-formulated for block moulders and precast concrete manufacturers. Dramatically shortens demoulding time, minimizes block breakage during stacking, and delivers high edge-definition.', 940000, 'NGN', 'cement-binders', 'bag', '/products/lafarge-elephant-supaset-cement-50kg.webp', 280, false, '{"Grade":"42.5N Quick Setting","Unit Weight":"50 kg","Standard Compliance":"NIS 444-1","Demoulding Acceleration":"Up to 35% faster","Application":"Vibrated blocks, precast culverts, kerbs"}'::jsonb),
+  ('bm-cem-004', 'sika-ceram-80-tile-adhesive-20kg', 'Sika Ceram-80 High-Bond Tile Adhesive 20kg', 'sika', 'SikaCeram-80 is a factory-mixed high-performance cementitious adhesive for indoor and outdoor fixing of floor and wall tiles. Excellent slip resistance, extended open time, and high adhesion strength.', 650000, 'NGN', 'cement-binders', 'bag', '/products/sika-ceram-80-tile-adhesive-20kg.webp', 140, false, '{"Packaging":"20 kg bag","Coverage":"~4.5 - 5.5 m² per bag","Pot Life":"approx. 2 hours","Classification":"C1 TE per EN 12004","Suitable Substrates":"Concrete, cement screeds, plastered walls"}'::jsonb),
+  ('bm-cem-005', 'super-snow-white-portland-cement-40kg', 'Super Snow White Portland Cement 40kg', 'super-snow', 'High-grade White Portland Cement with a whiteness index exceeding 88%. Used for architectural terrazzo floors, swimming pool plastering, decorative pointing, and artistic facade moldings.', 1850000, 'NGN', 'cement-binders', 'bag', '/products/super-snow-white-portland-cement-40kg.webp', 90, false, '{"Whiteness Index":"> 88%","Unit Weight":"40 kg","Standard Compliance":"EN 197-1 CEM I 52.5N","Application":"Terrazzo, decorative wall finishes, grouting"}'::jsonb),
+  ('bm-stl-001', 'tiger-tmt-rebar-12mm-12m', 'Tiger TMT High-Yield Rebar 12mm x 12m', 'tiger-tmt', 'Tiger TMT 12mm rebar is manufactured using advanced tempcore water-quenching technology to produce a tough outer martensite layer and ductile inner ferrite-pearlite core. Certified for seismic ductility, bendability, and fire endurance in columns and beams.', 1180000, 'NGN', 'steel-rods', '12m length', '/products/tiger-tmt-rebar-12mm-12m.webp', 650, true, '{"Diameter":"12 mm","Standard Length":"12 meters","Yield Strength":"500 N/mm² (Fe 500)","Standard":"BS 4449:2005 / NIS 117","Weight per length":"~10.65 kg"}'::jsonb),
+  ('bm-stl-002', 'tiger-tmt-rebar-16mm-12m', 'Tiger TMT High-Yield Rebar 16mm x 12m', 'tiger-tmt', 'Certified Grade 500 TMT 16mm steel rod for high-load structural frameworks. Exceptional elongation properties and rib geometry for optimum grip bonding with surrounding concrete.', 2150000, 'NGN', 'steel-rods', '12m length', '/products/tiger-tmt-rebar-16mm-12m.webp', 420, true, '{"Diameter":"16 mm","Standard Length":"12 meters","Yield Strength":"500 N/mm²","Weight per length":"~18.96 kg","Corrosion Resistance":"High (Quenched Layer)"}'::jsonb),
+  ('bm-stl-003', 'prime-steel-rebar-10mm-12m', 'Prime Steel Reinforcement Rebar 10mm x 12m', 'prime-steel', 'Prime Steel 10mm rebar provides uniform tensile resilience and tight bending radius without micro-fracturing. Perfect for shear links, stirrups in beams, and floor distribution mesh.', 840000, 'NGN', 'steel-rods', '12m length', '/products/prime-steel-rebar-10mm-12m.webp', 580, false, '{"Diameter":"10 mm","Length":"12 meters","Grade":"Fe 500","Weight per length":"~7.40 kg"}'::jsonb),
+  ('bm-stl-004', 'annealed-binding-wire-25kg-roll', 'Industrial Black Annealed Binding Wire 25kg Roll', 'prime-steel', 'Heavy-duty 16-gauge (1.6mm) soft annealed tying wire. Delivers high ductility for quick and secure twisting of iron rods without snapping during structural cage assembly.', 3800000, 'NGN', 'steel-rods', 'roll', '/products/annealed-binding-wire-25kg-roll.webp', 120, false, '{"Gauge":"16 SWG (1.6 mm)","Bundle Weight":"25 kg roll","Finish":"Oiled black annealed","Tensile Strength":"350 - 450 N/mm²"}'::jsonb),
+  ('bm-stl-005', 'brc-welded-wire-mesh-a142', 'BRC Welded Wire Mesh A142 (2.4m x 4.8m)', 'prime-steel', 'BRC A142 standard reinforcement mesh with 6mm cold-drawn ribbed wires welded into a 200mm x 200mm grid. Prevents shrinkage cracking and load dispersion in ground floor concrete slabs.', 4200000, 'NGN', 'steel-rods', 'sheet', '/products/brc-welded-wire-mesh-a142.webp', 85, false, '{"Mesh Type":"A142","Wire Diameter":"6 mm","Grid Spacing":"200 mm x 200 mm","Sheet Dimensions":"2.4m x 4.8m (11.52 m²)","Weight per Sheet":"~25.6 kg"}'::jsonb),
+  ('bm-blk-001', 'vibrated-hollow-block-9inch', '9-Inch Heavy-Duty Vibrated Hollow Sandcrete Block', 'buildmart-certified', 'Mechanically vibrated 9-inch load-bearing sandcrete hollow block (450mm x 225mm x 225mm). Precision mixed with clean sharp sand and genuine Dangote 42.5R cement, hydraulically compacted and wet-cured for 7 days to eliminate wall cracking.', 75000, 'NGN', 'blocks-bricks', 'block', '/products/vibrated-hollow-block-9inch.webp', 4500, true, '{"Dimensions":"450 mm x 225 mm x 225 mm (9\")","Compaction":"Hydraulic vibration machine","Crushing Strength":"≥ 3.55 N/mm²","Curing Period":"7-day water curing"}'::jsonb),
+  ('bm-blk-002', 'vibrated-hollow-block-6inch', '6-Inch High-Strength Vibrated Sandcrete Block', 'buildmart-certified', 'Standard 6-inch (450mm x 150mm x 225mm) high-density hollow block. Highly uniform dimensions for efficient mortar jointing and low plaster consumption on domestic partitions.', 65000, 'NGN', 'blocks-bricks', 'block', '/products/vibrated-hollow-block-6inch.webp', 5000, false, '{"Dimensions":"450 mm x 150 mm x 225 mm (6\")","Wall Thickness":"30 mm shell","Strength":"≥ 2.8 N/mm²","Usage":"Internal partition walls, fencing"}'::jsonb),
+  ('bm-blk-003', 'interlocking-paving-stones-60mm', '60mm Heavy-Duty Zig-Zag Concrete Interlocking Pavers', 'buildmart-certified', 'Industrial strength 60mm zig-zag interlocking paving stones. Manufactured with 30 MPa concrete designed for residential compounds, petrol station forecourts, and commercial parking bays.', 520000, 'NGN', 'blocks-bricks', 'sqm', '/products/interlocking-paving-stones-60mm.webp', 800, true, '{"Thickness":"60 mm","Coverage":"approx. 40 pieces per m²","Compressive Strength":"30 - 35 MPa","Finish":"Non-slip textured red / grey"}'::jsonb),
+  ('bm-blk-004', 'solid-burnt-clay-facing-brick', 'Red Terracotta Solid Burnt Facing Bricks', 'buildmart-certified', 'Classic high-temperature kiln-fired red clay facing bricks. Maintenance-free, thermal insulating, and completely weatherproof for exposed building facades, feature pillars, and fireplaces.', 38000, 'NGN', 'blocks-bricks', 'brick', '/products/solid-burnt-clay-facing-brick.webp', 3500, false, '{"Dimensions":"225 mm x 105 mm x 65 mm","Material":"Natural fired terracotta clay","Water Absorption":"< 8%","Color":"Classic rustic natural red"}'::jsonb),
+  ('bm-agg-001', 'sharp-sand-tipper-20-ton', 'Clean River Sharp Sand (20-Ton Tipper Trip)', 'buildmart-quarry', 'Direct-from-source clean coarse river sharp sand delivered via 20-ton multi-axle tipper. Salt-free, silt-free, and thoroughly washed for optimal cement-aggregate hydration in foundations, slabs, and columns.', 12000000, 'NGN', 'sand-aggregates', 'trip', '/products/sharp-sand-tipper-20-ton.webp', 50, true, '{"Volume / Weight":"20 Metric Tons (~14 cubic meters)","Silt Content":"< 3%","Grain Size":"Coarse 1.5mm - 2.5mm","Haulage":"Full tipper site delivery"}'::jsonb),
+  ('bm-agg-002', 'granite-chippings-3-4-20-ton', '3/4-Inch Clean Crushed Granite (20-Ton Tipper)', 'buildmart-quarry', 'High-density clean crushed blue-grey granite stone (20mm / 3/4 inch). Meets strict structural engineering specs with zero dust contaminants for high-performance suspended floor and foundation casting.', 24000000, 'NGN', 'sand-aggregates', 'trip', '/products/granite-chippings-3-4-20-ton.webp', 45, true, '{"Aggregate Size":"20 mm (3/4 inch)","Weight":"20 Tons","Aggregate Crushing Value":"< 20%","Specific Gravity":"2.65"}'::jsonb),
+  ('bm-agg-003', 'granite-chippings-1-2-20-ton', '1/2-Inch Fine Granite Chippings (20-Ton Tipper)', 'buildmart-quarry', 'Fine crushed 1/2-inch quarry granite stone aggregate. Ideal for congested rebar cages where larger aggregate creates honeycomb voids, as well as for high-strength paving mixes.', 25500000, 'NGN', 'sand-aggregates', 'trip', '/products/granite-chippings-1-2-20-ton.webp', 40, false, '{"Aggregate Size":"12 mm (1/2 inch)","Delivery Payload":"20 Tons","Dust Content":"Washed clean (< 1.5%)"}'::jsonb),
+  ('bm-agg-004', 'filling-laterite-tipper-20-ton', 'Red Foundation Filling Laterite (20-Ton Tipper)', 'buildmart-quarry', 'High-cohesion natural laterite soil for hardcore bed sub-base and foundation trench filling. Compresses firmly under mechanical roller or plate compactor without organic debris.', 8500000, 'NGN', 'sand-aggregates', 'trip', '/products/filling-laterite-tipper-20-ton.webp', 60, false, '{"Payload":"20 Metric Tons","Compaction Ratio":"High (Optimum Moisture Content ~14%)","Usage":"Foundation backfilling, road base, sub-grade"}'::jsonb),
+  ('bm-rof-001', 'long-span-aluminium-sheet-055mm', 'Long-Span Corrugated Aluminium Sheet 0.55mm', 'tower-aluminium', 'Coil-coated 0.55mm high-grade aluminium alloy roofing sheet. Rust-proof, ultra-lightweight, and custom-cut to your building''s rafter dimensions. Finished with PVDF protective paint for 30+ year fade resistance.', 480000, 'NGN', 'roofing', 'meter', '/products/long-span-aluminium-sheet-055mm.webp', 1200, true, '{"Thickness (Gauge)":"0.55 mm","Effective Width":"1,000 mm","Available Finishes":"Oven-baked traffic black / dark brown / forest green","Lifespan":"30+ years corrosion-free"}'::jsonb),
+  ('bm-rof-002', 'stone-coated-bond-roof-tile', 'Classic Stone-Coated Steel Roofing Tile (Bond Profile)', 'nigerite', 'Premium stone-coated roofing tile featuring an Aluzinc core coated with acrylic resin and natural ceramic-fired basalt stone granules. Absorbs heavy tropical rain noise and resists gale winds up to 160 km/h.', 540000, 'NGN', 'roofing', 'sheet', '/products/stone-coated-bond-roof-tile.webp', 950, true, '{"Base Material":"Aluzinc (Galvalume) 0.45 mm","Tile Dimensions":"1,340 mm x 420 mm","Coverage":"2.14 tiles per m²","Sound Dampening":"High (Noise absorbing)"}'::jsonb),
+  ('bm-rof-003', 'asbestos-free-fibre-cement-ceiling-sheet', 'Nigerite Fibre-Cement Flat Ceiling Sheet (4ft x 4ft)', 'nigerite', 'High-density autoclaved fibre cement ceiling sheet (1220mm x 1220mm x 3.5mm). Termite-proof, non-combustible, and moisture-resistant to prevent ceiling sagging in humid coastal conditions.', 320000, 'NGN', 'roofing', 'sheet', '/products/asbestos-free-fibre-cement-ceiling-sheet.webp', 600, false, '{"Dimensions":"4ft x 4ft (1220 mm x 1220 mm)","Thickness":"3.5 mm","Fire Rating":"Class A Non-Combustible","Eco Standard":"100% Asbestos-Free"}'::jsonb),
+  ('bm-rof-004', 'treated-hardwood-timber-2x4x12ft', 'Treated Structural Hardwood Timber (2" x 4" x 12ft)', 'buildmart-certified', 'Seasoned dense Nigerian hardwood (2-inch x 4-inch x 12ft length). Pressure dipped with copper anti-termite and anti-rot preservative solution for structural roof trusses, purlins, and wall plates.', 220000, 'NGN', 'roofing', 'piece', '/products/treated-hardwood-timber-2x4x12ft.webp', 1400, false, '{"Size":"2\" x 4\" (50 mm x 100 mm)","Length":"12 feet (3.66 meters)","Treatment":"Anti-termite borate dip","Species":"Mahogany / Obeche dense hardwood blend"}'::jsonb),
+  ('bm-til-001', 'cdk-porcelain-floor-tiles-60x60', 'CDK Premium Glazed Porcelain Floor Tile (60x60cm)', 'cdk', 'CDK 60cm x 60cm rectified porcelain tiles made in Nigeria to European ISO standards. Ultra-low water absorption (<0.5%), stain-proof high-traffic glaze, and precision laser-cut rectified edges for hairline 1mm grout lines.', 850000, 'NGN', 'tiles-flooring', 'carton', '/products/cdk-porcelain-floor-tiles-60x60.webp', 350, true, '{"Dimensions":"600 mm x 600 mm","Thickness":"9.5 mm","Packing":"4 pcs per carton (1.44 m²)","Water Absorption":"< 0.5% (Impervious)","Surface":"High-Gloss Nano Polished"}'::jsonb),
+  ('bm-til-002', 'royal-glazed-wall-tiles-30x60', 'Royal Glazed Ceramic Bathroom Wall Tiles (30x60cm)', 'royal', 'Royal Ceramics 30cm x 60cm glazed wall tile with hyper-realistic Italian Carrara marble veining. High chemical resistance to soap scum, easy cleaning, and light weight for vertical wall installations.', 680000, 'NGN', 'tiles-flooring', 'carton', '/products/royal-glazed-wall-tiles-30x60.webp', 400, false, '{"Dimensions":"300 mm x 600 mm","Packaging":"8 pcs per carton (1.44 m²)","Finish":"Glossy Carrara marble vein","Application":"Bathroom, kitchen, feature walls"}'::jsonb),
+  ('bm-til-003', 'granite-finish-outdoor-tiles-40x40', 'Rustic Non-Slip Exterior Veranda Tiles (40x40cm)', 'royal', '400mm x 400mm high-friction rustic ceramic tiles engineered for exterior car porches, swimming pool decks, and open balconies. Textured anti-slip surface ensures complete safety even in wet conditions.', 720000, 'NGN', 'tiles-flooring', 'carton', '/products/granite-finish-outdoor-tiles-40x40.webp', 220, false, '{"Dimensions":"400 mm x 400 mm","Packing":"10 pcs per carton (1.6 m²)","Slip Resistance":"R11 Anti-Slip Rating","Thickness":"9 mm"}'::jsonb),
+  ('bm-til-004', 'sika-epoxy-tile-grout-5kg', 'Sika Waterproof Anti-Fungal Tile Grout 5kg (Silver Grey)', 'sika', 'Polymer-enriched tile joint filler with built-in Sanitized anti-fungal micro-biocides. Completely waterproof, prevents black mildew growth in wet showers, and resists discoloration.', 950000, 'NGN', 'tiles-flooring', 'tub', '/products/sika-epoxy-tile-grout-5kg.webp', 160, false, '{"Weight":"5 kg bucket","Joint Width":"1 mm to 6 mm","Color":"Silver Grey","Features":"Anti-mildew, water-repellent"}'::jsonb),
+  ('bm-pnt-001', 'berger-luxol-emulsion-paint-20l', 'Berger Luxol High-Coverage Matt Emulsion White (20L)', 'berger', 'Berger Luxol Emulsion is Nigeria''s premier interior wall coating. Offers velvety matt finish, extraordinary hiding power (covers up to 13 m²/L), zero chalking, and scrub resistance tested over 5,000 cycles.', 4800000, 'NGN', 'paints-finishes', 'drum', '/products/berger-luxol-emulsion-paint-20l.webp', 180, true, '{"Volume":"20 Litres drum","Finish":"Rich Matt","Coverage":"11 - 13 m² per litre","Drying Time":"Touch dry: 30 mins; Recoat: 2 hours","VOC Level":"Low VOC / Odourless"}'::jsonb),
+  ('bm-pnt-002', 'dulux-trade-gloss-paint-4l', 'Dulux Trade High-Gloss Brilliant White (4L)', 'dulux', 'Dulux Trade Gloss provides an ultra-durable mirror-sheen protective coating for internal and external timber trims, doors, and steel burglar bars. Exceptional flow and leveling with UV-resistant non-yellowing binders.', 2450000, 'NGN', 'paints-finishes', 'gallon', '/products/dulux-trade-gloss-paint-4l.webp', 110, false, '{"Volume":"4 Litres can","Sheen":"Mirror High-Gloss (>90% at 60°)","Application":"Timber, skirting, structural steel, gates","Coverage":"Up to 16 m² per litre"}'::jsonb),
+  ('bm-pnt-003', 'meyer-imperial-textured-paint-20l', 'Meyer Imperial Weather-Shield Textured Coating (20L)', 'meyer', 'Meyer Imperial Texcote incorporates calibrated marble dust fillers and elastomeric binders. Bridges fine hairline plaster cracks, resists extreme UV bleaching and tropical algae/fungal growth.', 5800000, 'NGN', 'paints-finishes', 'drum', '/products/meyer-imperial-textured-paint-20l.webp', 95, false, '{"Volume":"20 Litres drum","Texture":"Fine to medium stippled pattern","Weather Resistance":"Resists heavy monsoon rain and UV","Coverage":"~1.5 - 2.0 m² per kg"}'::jsonb),
+  ('bm-pnt-004', 'acrylic-wall-putty-screeding-20kg', 'Pre-Mixed Acrylic Screeding Wall Putty (20kg)', 'berger', 'Ready-to-use water-based acrylic screeding putty. Fills surface pores, eliminates plaster roughness, and creates a glass-smooth substrate for high-end emulsion painting.', 1250000, 'NGN', 'paints-finishes', 'bag', '/products/acrylic-wall-putty-screeding-20kg.webp', 210, false, '{"Packaging":"20 kg bucket","Sandability":"Easy feather-edge sanding","Color":"Bright White","Coverage":"approx. 18 - 22 m² per bucket"}'::jsonb),
+  ('bm-plb-001', 'upvc-pressure-pipe-4inch-5-8m', '4-Inch uPVC Soil & Waste Drainage Pipe (5.8m Length)', 'buildmart-certified', 'Heavy-wall 110mm (4-inch) uPVC soil, waste and vent pipe (5.8-meter standard length). Impact-modified, corrosion-free, and resistant to aggressive domestic detergents and acidic sewage.', 1420000, 'NGN', 'plumbing', 'length', '/products/upvc-pressure-pipe-4inch-5-8m.webp', 240, true, '{"Nominal Diameter":"110 mm (4 inch)","Length":"5.8 meters","Wall Thickness":"3.2 mm (Class D)","Standard":"BS 4514 / NIS 145","Joint Type":"Solvent cement socket end"}'::jsonb),
+  ('bm-plb-002', 'geepee-overhead-water-tank-2000l', 'GeePee Cylindrical Overhead Water Tank 2000L', 'geepee', 'GeePee 2,000-litre antimicrobial domestic water tank. Built with multi-layer food-grade polyethylene, UV-reflective black outer shell, and silver-ion anti-algae inner lining for safe drinking water storage.', 14500000, 'NGN', 'plumbing', 'unit', '/products/geepee-overhead-water-tank-2000l.webp', 35, true, '{"Capacity":"2,000 Litres (440 Gallons)","Layers":"4 Heavy-Duty Layers","Material":"100% Virgin Food-Grade Polyethylene","Features":"Anti-algae, UV stabilized lid with breather"}'::jsonb),
+  ('bm-plb-003', 'ppr-hot-cold-water-pipe-25mm', 'PPR Hot & Cold Water Pressure Pipe 25mm x 4m (PN20)', 'buildmart-certified', 'PPR PN20 (20 Bar rated) 25mm pipe for concealed wall hot and cold plumbing. Fusion welded joints eliminate rubber ring failure and leaks permanently.', 380000, 'NGN', 'plumbing', 'length', '/products/ppr-hot-cold-water-pipe-25mm.webp', 500, false, '{"Outer Diameter":"25 mm (3/4\" equivalent)","Pressure Rating":"PN20 (2.0 MPa)","Length":"4 meters","Max Working Temp":"95°C"}'::jsonb),
+  ('bm-plb-004', 'twyford-dual-flush-toilet-suite', 'Twyford Ceramic Close-Coupled Dual Flush WC Suite', 'twyford', 'Premium Twyford white vitreous china toilet set with soft-close antibacterial seat cover, brass fixing bolts, and Geberit-style dual-flush siphon valve.', 8500000, 'NGN', 'plumbing', 'set', '/products/twyford-dual-flush-toilet-suite.webp', 65, false, '{"Material":"Vitreous China Glaze","Flush System":"Dual-Flush 3/6 Litres","Inclusions":"Pan, cistern, dual-flush mechanism, soft-close seat","Outlet":"Horizontal P-Trap with flexible conversion"}'::jsonb),
+  ('bm-ele-001', 'coleman-pure-copper-cable-2-5mm', 'Coleman Pure Copper Single Core Cable 2.5mm² (100m Coil)', 'coleman', 'Certified Coleman 2.5mm² single-core building wire for power ring mains and socket outlets. Manufactured with 99.9% electrolytic copper conductors and fire-retardant PVC insulation rated at 450/750V.', 5200000, 'NGN', 'electrical', 'coil', '/products/coleman-pure-copper-cable-2-5mm.webp', 220, true, '{"Conductor Size":"2.5 mm² Single Core","Coil Length":"100 meters (Certified)","Conductor":"99.9% Pure Annealed Copper","Voltage Rating":"450/750 V","Standards":"NIS 170 / BS 6004"}'::jsonb),
+  ('bm-ele-002', 'coleman-pure-copper-cable-1-5mm', 'Coleman Pure Copper Single Core Cable 1.5mm² (100m Coil)', 'coleman', 'Certified Coleman 1.5mm² cable designed for residential and commercial lighting circuits. Provides zero voltage-drop performance across long conduit runs.', 3400000, 'NGN', 'electrical', 'coil', '/products/coleman-pure-copper-cable-1-5mm.webp', 310, false, '{"Conductor Size":"1.5 mm²","Length":"100 meters","Conductor":"100% Oxygen-Free Copper","Color Options":"Red, Black, Green/Yellow Earth"}'::jsonb),
+  ('bm-ele-003', 'schneider-12-way-distribution-board', 'Schneider Acti9 12-Way SPN Consumer Distribution Board', 'schneider', 'Schneider Acti9 electrical breaker box with powder-coated sheet-steel enclosure, insulated busbar, and DIN-rail mounting. Features transparent smoke-grey door for quick breaker inspection.', 4600000, 'NGN', 'electrical', 'unit', '/products/schneider-12-way-distribution-board.webp', 75, true, '{"Ways":"12 Single Phase Outgoing Ways","Incomer Rating":"100A Double Pole Isolator included","IP Rating":"IP40 Protected","Enclosure":"Corrosion-resistant cold-rolled steel"}'::jsonb),
+  ('bm-ele-004', 'rigid-pvc-conduit-pipe-20mm', '20mm High-Impact Rigid PVC Electrical Conduit Pipe (3m)', 'buildmart-certified', 'Medium-duty 20mm round PVC conduit pipe for concealed concrete wall and decking electrical cable installation. Cold bendable with spring without kinking or collapsing.', 95000, 'NGN', 'electrical', 'length', '/products/rigid-pvc-conduit-pipe-20mm.webp', 1500, false, '{"Diameter":"20 mm","Length":"3.0 meters","Safety":"Self-extinguishing flame retardant","Standard":"BS 4607 / EN 50086"}'::jsonb),
+  ('bm-ele-005', 'philips-recessed-led-downlight-18w', 'Philips DayLight Recessed Circular LED Panel Downlight 18W', 'philips', 'High-efficacy Philips LED recessed ceiling light with built-in surge protector and diffused anti-glare lens. Emits 1,600 lumens at only 18W power draw with a 25,000-hour operational lifespan.', 580000, 'NGN', 'electrical', 'piece', '/products/philips-recessed-led-downlight-18w.webp', 280, false, '{"Power Rating":"18 Watts (1600 Lumens)","Color Temperature":"6500K Cool DayLight","Cutout Diameter":"150 mm (6 inch)","Voltage":"180V - 265V Wide Range Driver"}'::jsonb),
+  ('bm-dor-001', 'turkish-steel-security-door-3ft', 'Armoured Turkish Exterior Security Door (3ft x 7ft)', 'buildmart-certified', 'Imported high-security exterior door with 1.8mm Turkish galvanized steel leaf and reinforced sub-frame. Includes dual high-security euro-cylinder locks, anti-drill plates, stainless steel threshold, and sound-insulating rockwool core.', 21000000, 'NGN', 'doors-hardware', 'unit', '/products/turkish-steel-security-door-3ft.webp', 25, true, '{"Dimensions":"3ft x 7ft (900 mm x 2,100 mm)","Leaf Thickness":"70 mm","Locking Points":"14-point multi-directional deadlock","Finish":"Electrostatic embossed woodgrain powder coat"}'::jsonb),
+  ('bm-dor-002', 'casement-aluminium-window-4x4', 'Double-Glazed Aluminium Casement Window (4ft x 4ft)', 'tower-aluminium', 'Heavy-gauge extruded aluminium casement window. Features friction stay hinges, multi-point lock lever, stainless steel security wire flyscreen, and weather-sealed rubber gaskets against rain ingress.', 7500000, 'NGN', 'doors-hardware', 'unit', '/products/casement-aluminium-window-4x4.webp', 45, false, '{"Dimensions":"4ft x 4ft (1,200 mm x 1,200 mm)","Glass":"5mm Reflective Tinted Tempered Safety Glass","Profile Color":"Matt Architectural Black","Includes":"Integrated stainless steel mosquito net"}'::jsonb),
+  ('bm-dor-003', 'yale-mortise-door-lock-set', 'Yale Euro-Profile Stainless Steel Mortise Lockset', 'yale', 'Authentic Yale heavy-duty internal door lockset. Features brushed SUS304 stainless steel handles, 85mm center lock case, and solid brass 70mm euro-profile key cylinder with 3 computer-cut brass keys.', 1850000, 'NGN', 'doors-hardware', 'set', '/products/yale-mortise-door-lock-set.webp', 180, false, '{"Material":"SUS 304 Stainless Steel","Backset":"55 mm","Cylinder":"Solid Brass 70 mm Euro Profile","Cycle Rating":"Tested to 200,000 operation cycles"}'::jsonb),
+  ('bm-dor-004', 'solid-brass-heavy-duty-hinges-4inch', 'Ball-Bearing Heavy-Duty Solid Brass Door Hinges 4" (Pair)', 'yale', 'Precision-machined pair of solid brass butt hinges with 4 dual-sealed ball bearings. Supports heavy solid panel and security doors up to 100kg without sagging or squeaking.', 450000, 'NGN', 'doors-hardware', 'pair', '/products/solid-brass-heavy-duty-hinges-4inch.webp', 240, false, '{"Dimensions":"4\" x 3\" (100 mm x 75 mm)","Thickness":"3.0 mm","Bearings":"4 Stainless Steel Ball Bearings","Capacity":"Up to 100 kg door weight (per 3 hinges)"}'::jsonb),
+  ('bm-tol-001', 'ingco-contractor-wheelbarrow-100l', 'INGCO Heavy-Duty Steel Contractor Wheelbarrow 100L', 'ingco', 'INGCO industrial contractor wheelbarrow built for mixing and transporting wet concrete, blocks, and sand. Extra-thick 1.0mm pressed steel tray, tubular steel push handles, and 16-inch pneumatic tire with heavy-duty roller bearings.', 4800000, 'NGN', 'tools-scaffolding', 'unit', '/products/ingco-contractor-wheelbarrow-100l.webp', 65, true, '{"Load Capacity":"150 kg (100 Litres wet volume)","Tray Material":"1.0 mm Seamless Cold-Rolled Steel","Wheel":"4.00-8 Heavy-duty pneumatic tire with ball bearings","Chassis":"Reinforced tubular steel frame"}'::jsonb),
+  ('bm-tol-002', 'forged-steel-round-mouth-shovel', 'Forged High-Carbon Steel Round Mouth Shovel', 'ingco', 'Contractor-grade round mouth digging and loading shovel. Heat-treated high-carbon steel blade with reinforced collar and heavy-duty tubular D-handle for heavy aggregate shovelling.', 750000, 'NGN', 'tools-scaffolding', 'piece', '/products/forged-steel-round-mouth-shovel.webp', 190, false, '{"Blade Material":"Heat-treated 50Mn high carbon steel","Handle Type":"Reinforced steel core with composite D-grip","Weight":"2.1 kg","Usage":"Concrete mixing, trench digging, aggregate loading"}'::jsonb),
+  ('bm-tol-003', 'adjustable-scaffolding-acrow-prop', 'Heavy-Duty Adjustable Steel Scaffolding Acrow Prop (2.0m - 3.5m)', 'buildmart-certified', 'Industrial Acrow-style telescopic formwork support prop. High-yield structural steel tubes with self-cleaning collar nut, drop-forged G-pin, and 150mm square base plates for supporting decking during casting.', 2200000, 'NGN', 'tools-scaffolding', 'unit', '/products/adjustable-scaffolding-acrow-prop.webp', 350, true, '{"Extension Range":"2.0 meters to 3.5 meters","Load Capacity":"20 kN to 35 kN (Tested)","Inner / Outer Tube":"48 mm / 60 mm heavy-wall steel","Finish":"Hot-dip galvanized anti-corrosion"}'::jsonb),
+  ('bm-tol-004', 'total-rotary-hammer-drill-800w', 'TOTAL Industrial SDS-Plus Rotary Hammer Drill 800W', 'total', 'Heavy-duty 800W rotary hammer with 2.5 Joules impact energy. Three operating modes (drilling, hammer drilling, and chiseling) for fast anchor holes in high-strength cured concrete and masonry.', 6800000, 'NGN', 'tools-scaffolding', 'unit', '/products/total-rotary-hammer-drill-800w.webp', 55, false, '{"Power Input":"800 Watts","Impact Energy":"2.5 Joules","Max Concrete Drilling":"26 mm","Chuck Type":"SDS-Plus Quick Change","Includes":"3 SDS drill bits, 2 chisels, hard carry case"}'::jsonb),
+  ('bm-tol-005', 'ppe-site-safety-kit', 'PPE Complete Site Safety Kit (Hard Hat + Vest + Goggles + Gloves)', 'buildmart-certified', 'Complete compliant contractor personal safety kit. Includes high-density ABS ratchet-adjustable safety hard hat, class 2 high-visibility reflector vest, anti-scratch polycarbonate safety goggles, and heavy-duty nitrile-coated grip gloves.', 850000, 'NGN', 'tools-scaffolding', 'set', '/products/ppe-site-safety-kit.webp', 300, false, '{"Standard":"ANSI Z89.1 / EN 397 Certified","Kit Contents":"1x Safety Helmet, 1x Hi-Vis Vest, 1x Goggles, 1x Pair Grip Gloves","Hard Hat Color":"Safety Yellow with 6-point suspension harness","Size":"Universal adjustable"}'::jsonb)
+ON CONFLICT (id) DO UPDATE SET
+  slug = EXCLUDED.slug,
+  name = EXCLUDED.name,
+  brand_id = EXCLUDED.brand_id,
+  description = EXCLUDED.description,
+  price_kobo = EXCLUDED.price_kobo,
+  currency = EXCLUDED.currency,
+  category = EXCLUDED.category,
+  unit = EXCLUDED.unit,
+  image_url = EXCLUDED.image_url,
+  stock = EXCLUDED.stock,
+  featured = EXCLUDED.featured,
+  specs = EXCLUDED.specs;
+
+
+
+-- 4. Re-enable Brand Foreign Key Constraint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'fk_products_brand' AND table_name = 'products'
+  ) THEN
+    ALTER TABLE public.products
+    ADD CONSTRAINT fk_products_brand FOREIGN KEY (brand_id) REFERENCES public.brands(id) ON DELETE SET NULL;
+  END IF;
+EXCEPTION
+  WHEN others THEN NULL;
+END $$;
+

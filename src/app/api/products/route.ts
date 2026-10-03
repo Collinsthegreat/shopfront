@@ -13,7 +13,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = await createClient();
-    let query = supabase.from("products").select("*");
+    let query = supabase
+      .from("products")
+      .select("*")
+      .not("id", "like", "prod-%");
 
     if (category && category !== "all") {
       query = query.eq("category", category);

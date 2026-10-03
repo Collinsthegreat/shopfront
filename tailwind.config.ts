@@ -12,7 +12,9 @@ const config: Config = {
     extend: {
       colors: {
         canvas: "var(--color-bg)",
-        surface: "var(--color-bg-secondary)",
+        surface: "var(--color-surface)",
+        "surface-secondary": "var(--color-bg-secondary)",
+        "surface-elevated": "var(--color-surface-elevated)",
         border: "var(--color-border)",
         "border-subtle": "var(--color-border-subtle)",
         "text-primary": "var(--color-text-primary)",
@@ -33,6 +35,7 @@ const config: Config = {
         md: "var(--radius-md)",
         lg: "var(--radius-lg)",
         card: "var(--radius-lg)",
+        pill: "var(--radius-pill)",
       },
       boxShadow: {
         card: "var(--shadow-card)",

@@ -38,7 +38,11 @@ export type CheckoutFormValues = z.infer<typeof checkoutFormSchema>;
 
 export const orderItemInputSchema = z.object({
   productId: z.string().min(1, "Product ID is required"),
-  quantity: z.number().int().min(1, "Quantity must be at least 1").max(50, "Quantity exceeds limit"),
+  quantity: z
+    .number()
+    .int()
+    .min(1, "Quantity must be at least 1")
+    .max(10000, "Quantity exceeds maximum allowable bulk units"),
 });
 
 export const createOrderApiSchema = z.object({

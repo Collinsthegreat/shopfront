@@ -86,9 +86,9 @@ export function OrdersListClient(): React.JSX.Element {
             Order history and delivery status for {user?.email}
           </p>
         </div>
-        <Link href="/shop">
+        <Link href="/buy-materials">
           <Button variant="outline" size="sm">
-            <span>Continue Shopping</span>
+            <span>Continue Procurement</span>
             <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
           </Button>
         </Link>
@@ -105,10 +105,10 @@ export function OrdersListClient(): React.JSX.Element {
           <p className="text-xs text-text-secondary mb-6 leading-relaxed">
             When you place an order with Pay on Delivery, your confirmation and tracking details will appear here.
           </p>
-          <Link href="/shop">
+          <Link href="/buy-materials">
             <Button variant="primary" size="md">
               <ShoppingBag className="w-4 h-4 mr-2" />
-              <span>Explore Products</span>
+              <span>Explore Materials</span>
             </Button>
           </Link>
         </div>

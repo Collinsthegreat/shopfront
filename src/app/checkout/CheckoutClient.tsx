@@ -105,8 +105,8 @@ export function CheckoutClient(): React.JSX.Element {
             You must have at least one product in your cart before checking out.
           </p>
         </div>
-        <Link href="/shop">
-          <Button variant="primary">Browse Catalog</Button>
+        <Link href="/buy-materials">
+          <Button variant="primary">Browse Materials Catalog</Button>
         </Link>
       </div>
     );
@@ -199,18 +199,18 @@ export function CheckoutClient(): React.JSX.Element {
           <div className="bg-surface border border-border rounded-card p-6 sm:p-8 space-y-6">
             <div className="border-b border-border-subtle pb-4">
               <h2 className="text-lg font-semibold text-text-primary">
-                1. Delivery Address
+                1. Site Delivery Address
               </h2>
               <p className="text-xs text-text-secondary mt-0.5">
-                Where should we courier your items?
+                Where should we dispatch and offload your materials?
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-1">
                 <Input
-                  label="Full Name *"
-                  placeholder="e.g. Chinelo Okonkwo"
+                  label="Site Contact / Full Name *"
+                  placeholder="e.g. Engr. Babatunde Adeleke"
                   error={errors.fullName?.message}
                   {...register("fullName")}
                 />
@@ -222,15 +222,15 @@ export function CheckoutClient(): React.JSX.Element {
                   placeholder="e.g. 08012345678"
                   type="tel"
                   error={errors.phone?.message}
-                  helperText="Courier will call before arrival"
+                  helperText="Site receiver will be called before haulage dispatch"
                   {...register("phone")}
                 />
               </div>
 
               <div className="sm:col-span-2">
                 <Input
-                  label="Street Address *"
-                  placeholder="House number, street name, estate"
+                  label="Site Address *"
+                  placeholder="Plot number, street name, estate, or project site"
                   error={errors.address?.message}
                   {...register("address")}
                 />
@@ -239,7 +239,7 @@ export function CheckoutClient(): React.JSX.Element {
               <div className="sm:col-span-1">
                 <Input
                   label="City / Area *"
-                  placeholder="e.g. Ikeja, Lekki, Wuse 2"
+                  placeholder="e.g. Ikeja, Lekki Phase 1, Gwarinpa"
                   error={errors.city?.message}
                   {...register("city")}
                 />
@@ -248,7 +248,7 @@ export function CheckoutClient(): React.JSX.Element {
               <div className="sm:col-span-1">
                 <Input
                   label="State *"
-                  placeholder="e.g. Lagos, Abuja, Rivers"
+                  placeholder="e.g. Lagos, Abuja FCT, Ogun, Rivers"
                   error={errors.state?.message}
                   {...register("state")}
                 />
@@ -256,8 +256,8 @@ export function CheckoutClient(): React.JSX.Element {
 
               <div className="sm:col-span-2">
                 <Textarea
-                  label="Delivery Note (Optional)"
-                  placeholder="Landmark directions, gate code, or specific drop-off instructions"
+                  label="Site Offloading & Access Notes (Optional)"
+                  placeholder="Accessibility for heavy trucks, tipping location, offloading gate instructions"
                   error={errors.note?.message}
                   {...register("note")}
                 />
@@ -272,7 +272,7 @@ export function CheckoutClient(): React.JSX.Element {
                 2. Payment Method
               </h2>
               <p className="text-xs text-text-secondary mt-0.5">
-                Simulated transparent payment. No credit card details required.
+                Simulated transparent payment. No debit/credit card details required upfront.
               </p>
             </div>
 
@@ -281,14 +281,14 @@ export function CheckoutClient(): React.JSX.Element {
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-text-primary">
-                    Pay On Delivery (POD)
+                    Pay on Site Offloading (POD)
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-border-subtle text-text-secondary font-medium uppercase">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-border-subtle text-accent font-semibold uppercase">
                     Zero Risk
                   </span>
                 </div>
                 <p className="text-xs text-text-secondary leading-relaxed">
-                  Pay with Cash or instant Bank Transfer when the courier brings your package. You are encouraged to inspect goods before payment.
+                  Direct bank transfer or certified draft accepted once materials are inspected and offloaded at your construction site.
                 </p>
               </div>
             </div>
@@ -310,11 +310,11 @@ export function CheckoutClient(): React.JSX.Element {
                   className="pt-2 first:pt-0 flex items-center justify-between"
                 >
                   <div className="min-w-0 pr-2">
-                    <p className="font-medium text-text-primary truncate">
+                    <p className="font-semibold uppercase text-text-primary truncate">
                       {item.product.name}
                     </p>
                     <p className="text-text-tertiary">
-                      Qty: {item.quantity} × {formatMoney(item.product.price_kobo)}
+                      Qty: {item.quantity} {item.product.unit || "unit"} × {formatMoney(item.product.price_kobo)}
                     </p>
                   </div>
                   <span className="font-semibold text-text-primary tabular-nums">
@@ -326,23 +326,23 @@ export function CheckoutClient(): React.JSX.Element {
 
             <div className="border-t border-border-subtle pt-4 space-y-2.5 text-sm">
               <div className="flex items-center justify-between text-text-secondary">
-                <span>Subtotal</span>
+                <span>Materials Subtotal</span>
                 <span className="font-medium text-text-primary tabular-nums">
                   {formatMoney(subtotal)}
                 </span>
               </div>
               <div className="flex items-center justify-between text-text-secondary">
                 <span className="flex items-center gap-1.5">
-                  <Truck className="w-4 h-4 text-text-tertiary" />
-                  <span>Delivery</span>
+                  <Truck className="w-4 h-4 text-accent" />
+                  <span>Site Haulage & Logistics</span>
                 </span>
                 <span className="font-medium text-text-primary tabular-nums">
                   {formatMoney(deliveryFee)}
                 </span>
               </div>
               <div className="border-t border-border-subtle pt-3 flex items-center justify-between font-bold text-base text-text-primary">
-                <span>Total Due</span>
-                <span className="text-lg tabular-nums">
+                <span>Total Due on Offloading</span>
+                <span className="text-lg tabular-nums text-accent">
                   {formatMoney(grandTotal)}
                 </span>
               </div>
@@ -360,8 +360,8 @@ export function CheckoutClient(): React.JSX.Element {
             </Button>
 
             <div className="flex items-center justify-center gap-2 text-[11px] text-text-tertiary text-center">
-              <ShieldCheck className="w-4 h-4 text-text-secondary" />
-              <span>Inspection allowed upon arrival</span>
+              <ShieldCheck className="w-4 h-4 text-accent" />
+              <span>Offloading inspection allowed prior to payment</span>
             </div>
           </div>
         </div>

@@ -109,7 +109,7 @@ export const useCartStore = create<CartStoreState>()(
       },
     }),
     {
-      name: "shopfront_cart_v1",
+      name: "buildmart_cart_v1",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ items: state.items }),
       onRehydrateStorage: () => (state) => {

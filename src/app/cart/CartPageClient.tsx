@@ -33,11 +33,11 @@ export function CartPageClient(): React.JSX.Element {
           Your cart is empty
         </h1>
         <p className="text-sm text-text-secondary max-w-sm mx-auto mb-8">
-          You haven&apos;t added any minimalist goods to your cart yet. Explore our handcrafted catalog.
+          You haven&apos;t added any building materials to your cart yet. Explore our genuine construction supplies catalog.
         </p>
-        <Link href="/shop">
+        <Link href="/buy-materials">
           <Button size="lg" variant="primary">
-            Explore All Products
+            Explore All Materials
           </Button>
         </Link>
       </div>
@@ -52,17 +52,17 @@ export function CartPageClient(): React.JSX.Element {
             Your Cart
           </h1>
           <p className="text-xs text-text-secondary mt-1">
-            {itemsCount} {itemsCount === 1 ? "item" : "items"} ready for delivery
+            {itemsCount} {itemsCount === 1 ? "material item" : "material items"} ready for site dispatch
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <Link
-            href="/shop"
+            href="/buy-materials"
             className="inline-flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Continue Shopping</span>
+            <span>Continue Procurement</span>
           </Link>
           <button
             type="button"

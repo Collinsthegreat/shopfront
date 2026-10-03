@@ -38,8 +38,8 @@ export function CartSummary({
 
         <div className="flex items-center justify-between text-text-secondary">
           <span className="flex items-center gap-1.5">
-            <Truck className="w-4 h-4 text-text-tertiary" />
-            <span>Standard Delivery</span>
+            <Truck className="w-4 h-4 text-accent" />
+            <span>Site Logistics & Haulage</span>
           </span>
           <span className="font-medium text-text-primary tabular-nums">
             {subtotalKobo > 0 ? formatMoney(deliveryFeeKobo) : formatMoney(0)}
@@ -55,11 +55,11 @@ export function CartSummary({
       </div>
 
       <div className="p-3.5 bg-canvas rounded-md border border-border-subtle flex items-start gap-3">
-        <ShieldCheck className="w-5 h-5 text-text-primary flex-shrink-0 mt-0.5" />
+        <ShieldCheck className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
         <div className="text-xs space-y-0.5">
-          <p className="font-medium text-text-primary">Pay on Delivery</p>
+          <p className="font-medium text-text-primary">Pay on Site Offloading</p>
           <p className="text-text-secondary leading-relaxed">
-            Inspection upon arrival. Cash or mobile bank transfer accepted at your doorstep.
+            Inspection upon offloading. Direct bank transfer or certified draft accepted once materials are verified on site.
           </p>
         </div>
       </div>

@@ -121,8 +121,8 @@ export function OrderConfirmationClient({ orderId }: Props): React.JSX.Element {
           <Link href="/orders">
             <Button variant="outline" size="sm">View My Orders</Button>
           </Link>
-          <Link href="/shop">
-            <Button variant="primary" size="sm">Back to Shop</Button>
+          <Link href="/buy-materials">
+            <Button variant="primary" size="sm">Back to Materials</Button>
           </Link>
         </div>
       </div>
@@ -216,11 +216,11 @@ export function OrderConfirmationClient({ orderId }: Props): React.JSX.Element {
                 className="py-3.5 flex items-center justify-between text-sm"
               >
                 <div>
-                  <p className="font-medium text-text-primary">
+                  <p className="font-semibold uppercase text-text-primary">
                     {item.name_snapshot}
                   </p>
-                  <p className="text-xs text-text-tertiary mt-0.5">
-                    Qty: {item.quantity} × {formatMoney(item.unit_price_snapshot)}
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    {item.quantity} {item.unit_snapshot || "unit"}{item.quantity > 1 ? "s" : ""} @ {formatMoney(item.unit_price_snapshot)} / {item.unit_snapshot || "unit"}
                   </p>
                 </div>
                 <span className="font-semibold text-text-primary tabular-nums">
@@ -235,20 +235,20 @@ export function OrderConfirmationClient({ orderId }: Props): React.JSX.Element {
         <div className="p-6 bg-canvas/20">
           <div className="max-w-xs ml-auto space-y-2 text-sm">
             <div className="flex items-center justify-between text-text-secondary">
-              <span>Subtotal</span>
+              <span>Materials Subtotal</span>
               <span className="font-medium text-text-primary tabular-nums">
                 {formatMoney(order.subtotal)}
               </span>
             </div>
             <div className="flex items-center justify-between text-text-secondary">
-              <span>Delivery Fee</span>
+              <span>Site Logistics & Haulage</span>
               <span className="font-medium text-text-primary tabular-nums">
                 {formatMoney(order.delivery_fee)}
               </span>
             </div>
             <div className="border-t border-border-subtle pt-2 flex items-center justify-between font-bold text-base text-text-primary">
-              <span>Total (Pay on Delivery)</span>
-              <span className="tabular-nums">{formatMoney(order.total)}</span>
+              <span>Total (Pay on Site Offloading)</span>
+              <span className="tabular-nums text-accent">{formatMoney(order.total)}</span>
             </div>
           </div>
         </div>
@@ -257,7 +257,7 @@ export function OrderConfirmationClient({ orderId }: Props): React.JSX.Element {
         <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div className="space-y-1 text-xs">
             <span className="font-semibold uppercase tracking-wider text-text-secondary block">
-              Recipient & Contact
+              Site Receiver & Contact
             </span>
             <p className="text-text-primary font-medium">{order.customer_name}</p>
             <p className="text-text-secondary">{order.phone}</p>
@@ -265,7 +265,7 @@ export function OrderConfirmationClient({ orderId }: Props): React.JSX.Element {
 
           <div className="space-y-1 text-xs">
             <span className="font-semibold uppercase tracking-wider text-text-secondary block">
-              Delivery Address
+              Site Offloading Address
             </span>
             <p className="text-text-primary leading-relaxed">
               {order.address}, {order.city}, {order.state}
@@ -281,8 +281,8 @@ export function OrderConfirmationClient({ orderId }: Props): React.JSX.Element {
         {/* Footer Actions */}
         <div className="p-6 bg-surface flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-xs text-text-secondary">
-            <ShieldCheck className="w-4 h-4 text-text-primary" />
-            <span>Inspection allowed upon arrival</span>
+            <ShieldCheck className="w-4 h-4 text-accent" />
+            <span>Offloading inspection allowed prior to payment</span>
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">

@@ -15,11 +15,24 @@ export function formatMoney(
   const formatter = new Intl.NumberFormat(CURRENCY.locale, {
     style: includeSymbol ? "currency" : "decimal",
     currency: CURRENCY.code,
-    minimumFractionDigits: 2,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
 
   return formatter.format(majorUnits);
+}
+
+/**
+ * Formats price in kobo with unit label e.g. "₦9,500 / bag" or "₦120,000 / trip"
+ */
+export function formatPriceWithUnit(
+  amountInMinorUnits: number,
+  unit?: string,
+  includeSymbol: boolean = true
+): string {
+  const priceFormatted = formatMoney(amountInMinorUnits, includeSymbol);
+  if (!unit) return priceFormatted;
+  return `${priceFormatted} / ${unit}`;
 }
 
 /**
@@ -31,12 +44,12 @@ export function formatDate(date: string | Date, formatStr: string = "MMM d, yyyy
 }
 
 /**
- * Generates human-friendly order number e.g. SF-20261002-4821
+ * Generates human-friendly order number e.g. BM-20261003-4821
  */
 export function generateOrderNumber(date: Date = new Date()): string {
   const yyyy = date.getFullYear().toString();
   const mm = (date.getMonth() + 1).toString().padStart(2, "0");
   const dd = date.getDate().toString().padStart(2, "0");
   const randomSuffix = Math.floor(1000 + Math.random() * 9000).toString();
-  return `SF-${yyyy}${mm}${dd}-${randomSuffix}`;
+  return `BM-${yyyy}${mm}${dd}-${randomSuffix}`;
 }

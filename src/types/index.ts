@@ -1,12 +1,35 @@
-export interface Product {
+export interface Category {
   id: string;
   slug: string;
   name: string;
   description: string;
+  icon?: string;
+}
+
+export interface Brand {
+  id: string;
+  slug: string;
+  name: string;
+  tagline?: string;
+  logo_url?: string;
+}
+
+export interface Product {
+  id: string;
+  slug: string;
+  name: string;
+  brand_id?: string;
+  brand?: string;
+  category_id?: string;
+  category: string;
+  short_description?: string;
+  description: string;
+  specs: Record<string, string | number>;
   price_kobo: number;
+  unit: string; // e.g. "bag", "12m length", "trip", "ton", "sheet", "sqm", "carton", "drum", "unit", "pair"
   currency: string;
-  category: "carry" | "stationery" | "desk" | "living";
   image_url: string;
+  gallery?: string[];
   stock: number;
   featured: boolean;
   created_at: string;
@@ -32,6 +55,7 @@ export interface OrderItem {
   product_id: string;
   name_snapshot: string;
   unit_price_snapshot: number;
+  unit_snapshot?: string;
   quantity: number;
   created_at?: string;
 }
@@ -80,4 +104,20 @@ export interface AuthUser {
   email: string | null;
   fullName: string | null;
   avatarUrl: string | null;
+}
+
+export type SortOption =
+  | "price_asc"
+  | "price_desc"
+  | "name_asc"
+  | "newest";
+
+export interface FilterState {
+  search: string;
+  category: string;
+  brand: string;
+  sort: SortOption;
+  inStockOnly: boolean;
+  minPrice?: number;
+  maxPrice?: number;
 }

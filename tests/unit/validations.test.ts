@@ -102,10 +102,10 @@ describe("createOrderApiSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("fails when item quantity exceeds 50", () => {
+  it("fails when item quantity exceeds 10000", () => {
     const result = createOrderApiSchema.safeParse({
       ...validOrder,
-      items: [{ productId: "prod-001", quantity: 51 }],
+      items: [{ productId: "prod-001", quantity: 10001 }],
     });
     expect(result.success).toBe(false);
   });

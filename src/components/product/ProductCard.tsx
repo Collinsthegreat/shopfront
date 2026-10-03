@@ -3,12 +3,11 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Plus, Check } from "lucide-react";
+import { Plus, Check, ArrowRight } from "lucide-react";
 import { Product } from "@/types";
-import { formatMoney } from "@/lib/formatters";
+import { formatPriceWithUnit } from "@/lib/formatters";
 import { useCartStore } from "@/lib/cart/store";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
 
 export interface ProductCardProps {
   product: Product;
@@ -19,10 +18,11 @@ export function ProductCard({ product }: ProductCardProps): React.JSX.Element {
   const [isAdded, setIsAdded] = useState<boolean>(false);
 
   const isOutOfStock = product.stock <= 0;
-  const isLowStock = product.stock > 0 && product.stock <= 5;
+  const isLowStock = product.stock > 0 && product.stock <= 10;
 
   const handleAddToCart = (e: React.MouseEvent): void => {
     e.preventDefault();
+    e.stopPropagation();
     if (isOutOfStock) return;
 
     addItem(product, 1);
@@ -32,91 +32,117 @@ export function ProductCard({ product }: ProductCardProps): React.JSX.Element {
     }, 1200);
   };
 
-  const categoryLabels: Record<string, string> = {
-    carry: "Carry",
-    stationery: "Stationery",
-    desk: "Desk",
-    living: "Living",
-  };
+  const productUrl = `/buy-materials/${product.slug}`;
 
   return (
-    <div className="group flex flex-col bg-surface border border-border rounded-card overflow-hidden hover:border-text-secondary/40 transition-all duration-200">
+    <div className="group flex flex-col bg-surface border border-border rounded-2xl sm:rounded-3xl p-3 sm:p-4 hover:border-accent/60 transition-all duration-200 shadow-card hover:shadow-md">
+      {/* 1:1 Clean White Rounded Tile */}
       <Link
-        href={`/product/${product.slug}`}
-        className="relative aspect-square w-full bg-canvas flex items-center justify-center p-6 overflow-hidden"
+        href={productUrl}
+        className="relative aspect-square w-full bg-white rounded-xl sm:rounded-2xl flex items-center justify-center p-3 sm:p-5 overflow-hidden transition-transform duration-300 group-hover:scale-[1.01]"
       >
         <Image
           src={product.image_url}
           alt={product.name}
-          width={400}
-          height={400}
+          width={500}
+          height={500}
           priority={product.featured}
           className="object-contain w-full h-full transition-transform duration-300 group-hover:scale-105"
         />
 
-        <div className="absolute top-3 left-3 flex flex-col gap-1.5 items-start">
-          <Badge variant="outline" className="backdrop-blur-xs bg-surface/80">
-            {categoryLabels[product.category] ?? product.category}
-          </Badge>
+        {/* Brand / Category Pill */}
+        <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1 items-start">
+          {product.brand && (
+            <span className="px-2 py-0.5 rounded-full bg-black/75 backdrop-blur-xs text-white text-[10px] font-bold tracking-wider uppercase">
+              {product.brand}
+            </span>
+          )}
           {product.featured && (
-            <Badge variant="accent">Featured</Badge>
+            <span className="px-2 py-0.5 rounded-full bg-accent text-accent-contrast text-[10px] font-black tracking-wider uppercase">
+              Featured
+            </span>
           )}
         </div>
 
+        {/* Out of stock overlay */}
         {isOutOfStock && (
-          <div className="absolute inset-0 bg-surface/80 backdrop-blur-xs flex items-center justify-center">
-            <Badge variant="danger" className="text-xs px-3 py-1">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center">
+            <Badge variant="danger" className="text-xs px-3 py-1 font-bold uppercase tracking-wider">
               Out of Stock
             </Badge>
           </div>
         )}
       </Link>
 
-      <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-4">
+      {/* Card Content & Details */}
+      <div className="pt-3.5 pb-1 flex-1 flex flex-col justify-between space-y-3">
         <div>
+          {/* Uppercase Product Title */}
           <Link
-            href={`/product/${product.slug}`}
-            className="block text-base font-medium text-text-primary hover:underline line-clamp-1"
+            href={productUrl}
+            className="block text-xs sm:text-sm font-bold uppercase tracking-tight text-text-primary hover:text-accent transition-colors line-clamp-1"
+            title={product.name}
           >
             {product.name}
           </Link>
-          <p className="text-xs text-text-secondary line-clamp-2 mt-1.5 leading-relaxed">
-            {product.description}
+
+          {/* Short Specs / Subhead */}
+          <p className="text-[11px] text-text-secondary line-clamp-1 mt-1 font-medium">
+            {product.short_description || product.description}
           </p>
         </div>
 
-        <div className="pt-2 border-t border-border-subtle flex items-center justify-between">
-          <div>
-            <span className="text-base font-semibold text-text-primary tabular-nums">
-              {formatMoney(product.price_kobo)}
+        {/* Price Line with Unit */}
+        <div className="pt-2 border-t border-border/60 flex items-baseline justify-between gap-1">
+          <div className="flex flex-col">
+            <span className="text-xs sm:text-sm font-extrabold text-text-primary group-hover:text-accent transition-colors tabular-nums">
+              {formatPriceWithUnit(product.price_kobo, product.unit)}
             </span>
             {isLowStock && (
-              <p className="text-[11px] text-danger font-medium mt-0.5">
-                Only {product.stock} left
-              </p>
+              <span className="text-[10px] text-danger font-semibold">
+                Only {product.stock} {product.unit}s remaining
+              </span>
             )}
           </div>
+        </div>
 
-          <Button
-            size="sm"
-            variant={isAdded ? "secondary" : "primary"}
+        {/* Two Buttons Side by Side (Reference Requirement) */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          {/* Quiet Outline Add to Cart */}
+          <button
+            type="button"
             onClick={handleAddToCart}
             disabled={isOutOfStock}
+            className={`h-9 px-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+              isOutOfStock
+                ? "border-border text-text-tertiary opacity-50 cursor-not-allowed bg-surface-secondary"
+                : isAdded
+                ? "border-accent bg-accent/10 text-accent font-bold"
+                : "border-border text-text-primary hover:border-text-primary hover:bg-surface-elevated active:scale-95"
+            }`}
             aria-label={`Add ${product.name} to cart`}
-            className="min-w-[40px] px-3"
           >
             {isAdded ? (
-              <span className="flex items-center gap-1 text-xs">
-                <Check className="w-3.5 h-3.5 text-text-primary" />
+              <>
+                <Check className="w-3.5 h-3.5 text-accent" />
                 <span>Added</span>
-              </span>
+              </>
             ) : (
-              <span className="flex items-center gap-1 text-xs">
-                <Plus className="w-3.5 h-3.5" />
+              <>
+                <Plus className="w-3.5 h-3.5 text-text-secondary" />
                 <span>Add</span>
-              </span>
+              </>
             )}
-          </Button>
+          </button>
+
+          {/* Solid Accent View Link */}
+          <Link
+            href={productUrl}
+            className="h-9 px-2 rounded-xl bg-accent text-accent-contrast hover:bg-accent-hover text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition-all active:scale-95 text-center"
+          >
+            <span>View</span>
+            <ArrowRight className="w-3 h-3" />
+          </Link>
         </div>
       </div>
     </div>
