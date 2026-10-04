@@ -2,10 +2,16 @@ import { NextResponse, type NextRequest } from "next/server";
 import { INITIAL_PRODUCTS } from "@/lib/data/products";
 import { createClient } from "@/lib/supabase/server";
 import { Product } from "@/types";
+import { corsHeaders, handleOptions } from "@/lib/cors";
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category");
+  const brand = searchParams.get("brand");
   const search = searchParams.get("search");
   const sort = searchParams.get("sort") || "featured";
 
@@ -20,6 +26,10 @@ export async function GET(request: NextRequest) {
 
     if (category && category !== "all") {
       query = query.eq("category", category);
+    }
+
+    if (brand && brand !== "all") {
+      query = query.eq("brand_id", brand);
     }
 
     if (search && search.trim()) {
@@ -60,6 +70,9 @@ export async function GET(request: NextRequest) {
   if (category && category !== "all") {
     products = products.filter((p) => p.category === category);
   }
+  if (brand && brand !== "all") {
+    products = products.filter((p) => p.brand_id === brand);
+  }
   if (search && search.trim()) {
     const q = search.toLowerCase().trim();
     products = products.filter(
@@ -69,5 +82,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ data: products });
+  return NextResponse.json(
+    { data: products, count: products.length },
+    { headers: corsHeaders }
+  );
 }
+

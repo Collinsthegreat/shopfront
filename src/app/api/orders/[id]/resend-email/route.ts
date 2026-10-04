@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getUserFromRequest } from "@/lib/supabase/get-user";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { sendOrderConfirmation } from "@/lib/email";
 import { OrderWithItems } from "@/types";
+import { corsHeaders, handleOptions } from "@/lib/cors";
 
 interface RouteParams {
   params: {
@@ -9,31 +11,35 @@ interface RouteParams {
   };
 }
 
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: RouteParams
 ) {
   const { id } = params;
 
   if (!id) {
-    return NextResponse.json({ error: "Order ID is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Order ID is required" },
+      { status: 400, headers: corsHeaders }
+    );
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  const { user, error: authError } = await getUserFromRequest(request);
 
   if (authError || !user || !user.email) {
     return NextResponse.json(
       { error: "Unauthorized. Please sign in to resend the confirmation email." },
-      { status: 401 }
+      { status: 401, headers: corsHeaders }
     );
   }
 
+  const adminSupabase = createAdminClient();
   // Retrieve own order
-  const { data: order, error: orderError } = await supabase
+  const { data: order, error: orderError } = await adminSupabase
     .from("orders")
     .select(`
       *,
@@ -41,12 +47,12 @@ export async function POST(
     `)
     .eq("id", id)
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
   if (orderError || !order) {
     return NextResponse.json(
       { error: "Order not found" },
-      { status: 404 }
+      { status: 404, headers: corsHeaders }
     );
   }
 
@@ -61,13 +67,16 @@ export async function POST(
           result.error ||
           "Could not send email at this moment. If using a Mailgun sandbox domain, ensure your recipient address is authorized.",
       },
-      { status: 502 }
+      { status: 502, headers: corsHeaders }
     );
   }
 
-  return NextResponse.json({
-    status: "ok",
-    message: "Confirmation email sent successfully",
-    messageId: result.messageId,
-  });
+  return NextResponse.json(
+    {
+      status: "ok",
+      message: "Confirmation email sent successfully",
+      messageId: result.messageId,
+    },
+    { headers: corsHeaders }
+  );
 }

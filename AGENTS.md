@@ -173,28 +173,115 @@ shopfront/ (BuildMart)
 - Formatted with customer name, order number, delivery details, itemized table displaying unit prices and units (e.g. `100 bags @ ₦9,500 / bag = ₦950,000`), simulated haulage fee, total, and link to `/orders/[id]`.
 - **Non-blocking dispatch:** Email failures log to `email_logs` and display a soft warning banner with a "Resend confirmation email" button without failing or rolling back the order.
 
-## Testing & Quality Assurance
-- `npm test`: Unit tests for cart store, money formatters, order number generator, Zod schemas, email template rendering, and product data integrity (asserting every product has a valid price, unit, category, and existing image file).
-- `npm run lint`: 0 ESLint warnings or errors.
-- `npm run typecheck`: 0 TypeScript compiler errors.
-- `npm run build`: Production compilation across all static and dynamic routes.
+## Mobile Architecture & Standards (/mobile)
+
+### Mobile Folder Structure
+```
+mobile/
+├── app/
+│   ├── _layout.tsx                 # Root layout, ThemeProvider, QueryClientProvider, AuthProvider
+│   ├── (tabs)/
+│   │   ├── _layout.tsx             # Bottom tabs (Home, Marketplace, Cart, Orders, Account)
+│   │   ├── index.tsx               # Home screen (Hero, Categories, Brands row, Featured)
+│   │   ├── marketplace.tsx         # Marketplace screen (2-col grid, search, filters bottom sheet)
+│   │   ├── cart.tsx                # Cart screen (Realtime sync, bulk steppers, delivery fee, checkout)
+│   │   ├── orders.tsx              # Orders history screen (Auth gated, status badges, details)
+│   │   └── account.tsx             # User profile, Google sign-in/out, theme toggle
+│   ├── product/
+│   │   └── [slug].tsx              # Product detail modal/screen (specs table, bulk stepper, add to cart)
+│   ├── checkout.tsx                # Checkout screen (Zod form, address, simulated POD)
+│   ├── order/
+│   │   └── [id].tsx                # Order confirmation receipt with unit breakdown
+│   └── auth/
+│       └── callback.tsx            # Deep link OAuth callback handler
+├── components/
+│   ├── ui/                         # Button, Input, BottomSheet, Badge, ThemedText, ThemedView
+│   ├── product/                    # MobileProductCard, ProductGrid, FilterSheet, BulkStepper
+│   ├── cart/                       # CartItemCard, CartSummaryCard, SyncIndicator
+│   └── orders/                     # OrderHistoryCard, OrderReceiptTable
+├── hooks/
+│   ├── useCartSync.ts              # Realtime subscription + TanStack Query cache invalidation
+│   ├── useAuth.ts                  # Supabase OAuth session lifecycle with SecureStore
+│   └── useTheme.ts                 # Dual-theme color hook matching web design tokens
+├── lib/
+│   ├── api/
+│   │   ├── client.ts               # Fetch client with auto Bearer JWT interceptor & 401 handling
+│   │   ├── products.ts             # API methods for products, categories, brands
+│   │   ├── cart.ts                 # API methods for GET, POST, PATCH, DELETE, merge cart
+│   │   └── orders.ts               # API methods for create order, order history, resend email
+│   ├── supabase/
+│   │   ├── client.ts               # Supabase client with expo-secure-store auth storage adapter
+│   │   └── auth.ts                 # Google PKCE OAuth via expo-web-browser & expo-linking
+│   ├── theme.ts                    # Design tokens (Dark: #0B1220, Light: #FFFFFF, Accent: #F58A2B)
+│   ├── formatters.ts               # Shared currency (Intl.NumberFormat) and unit formatting
+│   └── validations.ts              # Shared Zod schemas for forms and payloads
+├── tests/
+│   ├── unit/                       # Cart logic, formatters, validation tests
+│   └── components/                 # Product card, cart sync indicator tests
+├── app.json                        # Expo config (Scheme: buildmart, Android package, iOS bundle)
+├── eas.json                        # EAS build config with preview profile for installable APK
+└── package.json
+```
+
+### Mobile Design & Token Rules
+- **Themes:** Dark (`#0B1220` navy-black, `#131D31` surfaces) and Light (`#FFFFFF` background, `#F8FAFC` surfaces) following system preference with manual toggle that persists.
+- **ONE Accent Color:** Construction safety orange (`#F58A2B` in dark mode / `#EA580C` in light mode). High-contrast text on orange buttons.
+- **Subtle Red:** Reserved strictly for errors and out-of-stock indicators. No rainbow gradients or extra accents.
+- **Product Cards:** Clean white rounded tile (1:1 aspect ratio, `resizeMode: "contain"`), uppercase name, brand pill, clear unit pricing (`₦9,500 / bag`), outline "Add to cart" + solid orange "View".
+- **Haptics & Touch Targets:** Minimum 44pt touch targets, safe-area insets, keyboard-avoiding views, and haptic feedback on cart actions.
+
+### Mobile Security & Architectural Rules
+1. **Never Bundle Secrets:** The Supabase Service-Role Key and Mailgun API Key are strictly SERVER-ONLY and must NEVER appear in `/mobile`.
+2. **Secure Token Storage:** Auth sessions and JWT access tokens are stored strictly in `expo-secure-store`, NEVER in unencrypted `AsyncStorage`.
+3. **Never Trust Client Prices:** The mobile client submits `{ productId, quantity }` only. The database and backend calculate all line items, subtotals, and haulage fees.
+4. **Single Source of Truth API:** Mobile calls the deployed Next.js production API (`https://shopfront-green.vercel.app/api/...`), never a mock backend.
+
+### Mobile Cart Rules & Realtime Sync
+- **Guest State:** When signed out, cart items live in local storage and merge into the server cart upon Google sign-in.
+- **Authenticated State:** The database `cart_items` table is the authoritative source of truth.
+- **Realtime Pub/Sub:** Subscribes to Supabase Realtime channel `postgres_changes` on table `cart_items` filtered by `user_id=eq.<id>`.
+- **Immediate Invalidation:** On any event (`INSERT`, `UPDATE`, `DELETE`), refetches `GET /api/cart` to update state within 1–2 seconds.
+- **Resilience:** Auto-reconnects on network recovery, refetches on app foreground (`AppState`), and polls every 5 seconds if Realtime is disconnected.
+
+### Quality Assurance & Testing Rules
+- Web: `npm test`, `npm run lint`, `npm run typecheck` must pass with 0 errors.
+- Mobile: `npm test`, `npm run lint`, `npm run typecheck`, and `npx expo-doctor` must pass with 0 errors.
+- Realtime Two-Client Sync: Automated test script verifying web/mobile event propagation within 3 seconds.
+- Physical Device Verification: Step-by-step physical phone verification on Expo Go or standalone preview APK documented in `docs/device-test.md`.
 
 ---
 
 ## Milestones Checklist
+### Web Milestones
 - [x] 0. Research Cutstruct reference site & write `docs/reference-notes.md`
 - [x] 1. Update `AGENTS.md` and detailed execution roadmap
-- [ ] 2. Source and optimize 40+ building material WebP photos in `/public/products/` & create `CREDITS.md`
-- [ ] 3. Build 40-50 product dataset across 11 categories with brands, specs JSONB, prices, and units
-- [ ] 4. Implement design tokens, floating pill navigation, hero, and theme toggle in `globals.css` and layout
-- [ ] 5. Implement Marketplace page (`/buy-materials`), product card anatomy, live search, faceted filters, and URL sync
-- [ ] 6. Implement Product Detail page (`/buy-materials/[slug]`) with bulk stepper and specs table
-- [ ] 7. Update Zustand cart drawer and `/cart` page with unit labels, volume inputs, and haulage calculation
-- [ ] 8. Supabase migration: `categories`, `brands`, `products`, `orders`, `order_items`, and updated `create_order` RPC
-- [ ] 9. Seed Supabase database with all 40+ products, categories, and brands
-- [ ] 10. Update Checkout, Auth gate, Order Confirmation with unit breakdown, and My Orders history
-- [ ] 11. Update Mailgun email templates with itemized units and haulage
-- [ ] 12. Run Vitest test suite, lint, typecheck, and production build
-- [ ] 13. Deploy to Vercel production & verify on live domain
-- [ ] 14. Push to private GitHub repository with README
-- [ ] 15. Live end-to-end browser verification in incognito
+- [x] 2. Source and optimize 48 building material WebP photos in `/public/products/` & create `CREDITS.md`
+- [x] 3. Build 48-product dataset across 11 categories with brands, specs JSONB, prices, and units
+- [x] 4. Implement design tokens, floating pill navigation, hero, and theme toggle in `globals.css` and layout
+- [x] 5. Implement Marketplace page (`/buy-materials`), product card anatomy, live search, faceted filters, and URL sync
+- [x] 6. Implement Product Detail page (`/buy-materials/[slug]`) with bulk stepper and specs table
+- [x] 7. Update Zustand cart drawer and `/cart` page with unit labels, volume inputs, and haulage calculation
+- [x] 8. Supabase migration: `categories`, `brands`, `products`, `orders`, `order_items`, and updated `create_order` RPC
+- [x] 9. Seed Supabase database with all 48 products, 11 categories, and 24 brands
+- [x] 10. Update Checkout, Auth gate, Order Confirmation with unit breakdown, and My Orders history
+- [x] 11. Update Mailgun email templates with itemized units and haulage
+- [x] 12. Run Vitest test suite, lint, typecheck, and production build
+- [x] 13. Deploy to Vercel production & verify on live domain
+- [x] 14. Add comprehensive original About page (`/about`) matching industrial procurement platform standard
+- [x] 15. Verify all live web routes in production
+
+### Mobile Expansion Milestones
+- [x] 16. Author `docs/mobile-plan.md` (gap analysis & sync architecture) and update `AGENTS.md`
+- [ ] 17. Supabase migration for `carts` and `cart_items` tables with RLS and `supabase_realtime` publication
+- [ ] 18. Implement unified auth helper (`lib/supabase/get-user.ts`) supporting cookies and Bearer JWTs
+- [ ] 19. Implement complete Cart API (`/api/cart`, `/api/cart/items`, `/api/cart/items/[productId]`, `/api/cart/merge`)
+- [ ] 20. Implement catalog APIs (`/api/products/[slug]`, `/api/categories`, `/api/brands`) with CORS and `docs/api.md`
+- [ ] 21. Refactor website cart store to sync with server cart and subscribe to Supabase Realtime with 5s polling fallback
+- [ ] 22. Scaffold Expo mobile app in `/mobile` with Expo Router, TanStack Query, and SecureStore
+- [ ] 23. Implement Google OAuth with PKCE flow in mobile using the same Supabase project
+- [ ] 24. Build mobile screens: Home, Marketplace, Product Detail, Realtime Cart, Checkout, Orders, Account
+- [ ] 25. Run automated test suites (web + mobile) and scripted two-client Realtime sync test (`tests/sync-test.ts`)
+- [ ] 26. Configure EAS preview APK build (`eas.json`) and Expo Go instructions
+- [ ] 27. Create `docs/device-test.md` physical phone verification checklist and hand off to user for device testing
+- [ ] 28. Deploy updated backend to Vercel production and push commits to GitHub
+
