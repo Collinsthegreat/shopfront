@@ -39,6 +39,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "866ddedd-3a52-4794-ae79-f7fbff7949ca"
+      }
+    },
+    "owner": "collinsthegreat"
   }
 }
