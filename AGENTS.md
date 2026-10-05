@@ -272,16 +272,16 @@ mobile/
 
 ### Mobile Expansion Milestones
 - [x] 16. Author `docs/mobile-plan.md` (gap analysis & sync architecture) and update `AGENTS.md`
-- [ ] 17. Supabase migration for `carts` and `cart_items` tables with RLS and `supabase_realtime` publication
-- [ ] 18. Implement unified auth helper (`lib/supabase/get-user.ts`) supporting cookies and Bearer JWTs
-- [ ] 19. Implement complete Cart API (`/api/cart`, `/api/cart/items`, `/api/cart/items/[productId]`, `/api/cart/merge`)
-- [ ] 20. Implement catalog APIs (`/api/products/[slug]`, `/api/categories`, `/api/brands`) with CORS and `docs/api.md`
-- [ ] 21. Refactor website cart store to sync with server cart and subscribe to Supabase Realtime with 5s polling fallback
-- [ ] 22. Scaffold Expo mobile app in `/mobile` with Expo Router, TanStack Query, and SecureStore
-- [ ] 23. Implement Google OAuth with PKCE flow in mobile using the same Supabase project
-- [ ] 24. Build mobile screens: Home, Marketplace, Product Detail, Realtime Cart, Checkout, Orders, Account
-- [ ] 25. Run automated test suites (web + mobile) and scripted two-client Realtime sync test (`tests/sync-test.ts`)
-- [ ] 26. Configure EAS preview APK build (`eas.json`) and Expo Go instructions
-- [ ] 27. Create `docs/device-test.md` physical phone verification checklist and hand off to user for device testing
-- [ ] 28. Deploy updated backend to Vercel production and push commits to GitHub
+- [x] 17. Supabase migration for `carts` and `cart_items` tables with RLS and `supabase_realtime` publication
+- [x] 18. Implement unified auth helper (`lib/supabase/get-user.ts`) supporting cookies and Bearer JWTs
+- [x] 19. Implement complete Cart API (`/api/cart`, `/api/cart/items`, `/api/cart/items/[productId]`, `/api/cart/merge`)
+- [x] 20. Implement catalog APIs (`/api/products/[slug]`, `/api/categories`, `/api/brands`) with CORS and `docs/api.md`
+- [x] 21. Refactor website cart store to sync with server cart and subscribe to Supabase Realtime with 5s polling fallback
+- [x] 22. Scaffold Expo mobile app in `/mobile` with Expo Router, TanStack Query, and SecureStore
+- [x] 23. Implement Google OAuth with PKCE flow in mobile using the same Supabase project
+- [x] 24. Build mobile screens: Home, Marketplace, Product Detail, Realtime Cart, Checkout, Orders, Account
+- [x] 25. Run automated test suites (web + mobile) and scripted two-client Realtime sync test (`tests/sync-test.ts`)
+- [x] 26. Configure EAS preview APK build (`eas.json`) and Expo Go instructions
+- [x] 27. Create `docs/device-test.md` physical phone verification checklist and verify on physical iPhone via Expo Go
+- [x] 28. Deploy updated backend to Vercel production and verify live end-to-end sync
 

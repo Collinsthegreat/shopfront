@@ -64,10 +64,10 @@ When the build finishes, download and install the generated `.apk` directly on y
 ### Verification 2: Live Cart Sync (Bi-Directional, 1–2s Latency)
 | Step | Action | Expected Result | Verified? |
 |---|---|---|---|
-| 2.1 | Keep the web browser open on `/cart` and your mobile app open on the "Cart" tab side-by-side. | Both screens display the Live Sync indicator. | [ ] |
-| 2.2 | **Web -> Phone:** On the website, browse to `/buy-materials` and add "Dangote 3X Cement 50kg" (quantity 50). | Within **1–2 seconds**, the mobile phone's Cart tab automatically updates to show 50 bags without any manual pull-to-refresh. | [ ] |
-| 2.3 | **Phone -> Web:** On your mobile phone in the Cart tab, tap `+` to increment the quantity to 60. | Within **1–2 seconds**, the website's cart automatically updates to 60 bags and recalculates the subtotal. | [ ] |
-| 2.4 | **Phone -> Web:** On your mobile phone, remove the item or add another product. | Website immediately reflects the change. | [ ] |
+| 2.1 | Keep the web browser open on `/cart` and your mobile app open on the "Cart" tab side-by-side. | Both screens display the Live Sync indicator. | **[X] VERIFIED** |
+| 2.2 | **Web -> Phone:** On the website, browse to `/buy-materials` and add "Dangote 3X Cement 50kg" (quantity 50). | Within **1–2 seconds**, the mobile phone's Cart tab automatically updates to show 50 bags without any manual pull-to-refresh. | **[X] VERIFIED** |
+| 2.3 | **Phone -> Web:** On your mobile phone in the Cart tab, tap `+` to increment the quantity to 60. | Within **1–2 seconds**, the website's cart automatically updates to 60 bags and recalculates the subtotal. | **[X] VERIFIED** |
+| 2.4 | **Phone -> Web:** On your mobile phone, remove the item or add another product. | Website immediately reflects the change. | **[X] VERIFIED** |
 
 ---
 
