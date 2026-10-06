@@ -2,6 +2,7 @@
 
 [![Live Web Application](https://img.shields.io/badge/Live%20Web-shopfront--green.vercel.app-ea580c?style=for-the-badge&logo=vercel)](https://shopfront-green.vercel.app)
 [![Android APK Download](https://img.shields.io/badge/Android%20APK-Download%20BuildMart-10b981?style=for-the-badge&logo=android)](https://expo.dev/artifacts/eas/VYWxmTjv3NRWLwYrT0EtEKtEeINQa6divQ2NxpMgwME.apk)
+[![EAS Build](https://img.shields.io/badge/EAS%20Build-Finished%20(108MB)-success?style=for-the-badge&logo=expo)](https://expo.dev/accounts/collinsthegreat/projects/buildmart/builds/248f4e8c-4ced-44b8-90df-564ee7f34686)
 [![Framework](https://img.shields.io/badge/Next.js-14.2%20App%20Router-black?style=for-the-badge&logo=next.js)](https://nextjs.org)
 [![Mobile](https://img.shields.io/badge/Expo-SDK%2057%20%2F%20React%20Native-000020?style=for-the-badge&logo=expo)](https://expo.dev)
 [![Database](https://img.shields.io/badge/Supabase-PostgreSQL%20%2B%20Realtime-3ecf8e?style=for-the-badge&logo=supabase)](https://supabase.com)
@@ -202,25 +203,55 @@ cd mobile
 npx eas-cli build -p android --profile preview
 ```
 
-The generated standalone `.apk` installs directly on physical Android devices without requiring a running development server or Metro bundler.
+The generated standalone `.apk` installs directly on physical Android devices without requiring a running development server or Metro bundler:
 
-- **Verified Build Artifact:** [Download buildmart.apk](https://expo.dev/artifacts/eas/VYWxmTjv3NRWLwYrT0EtEKtEeINQa6divQ2NxpMgwME.apk)
+- **Direct APK Download:** [buildmart.apk (~108 MB)](https://expo.dev/artifacts/eas/VYWxmTjv3NRWLwYrT0EtEKtEeINQa6divQ2NxpMgwME.apk)
+- **EAS Build Console:** [Build #248f4e8c-4ced-44b8-90df-564ee7f34686](https://expo.dev/accounts/collinsthegreat/projects/buildmart/builds/248f4e8c-4ced-44b8-90df-564ee7f34686)
+- **Application Profile:** `preview` (standalone Android APK with no Expo Go dependency)
+
+---
+
+## Continuous Video Demonstration Guide (90-Second Unedited Script)
+
+For submission evaluation and compliance with the unedited continuous video recording criteria:
+
+1. **Step 1: Setup & Side-by-Side Display (0:00 - 0:15)**
+   - Display the production web application (`https://shopfront-green.vercel.app`) on your computer screen.
+   - Hold your physical mobile phone next to the monitor running **BuildMart** (or mirror your phone via screen capture).
+   - Show that both platforms are logged into the **same Google account** (Profile displays identical user name and email).
+
+2. **Step 2: Web to Phone Live Cart Sync (0:15 - 0:40)**
+   - Open `/cart` on the website and keep the "Cart" tab active on the mobile phone.
+   - On the website, browse to `/buy-materials` and add **"Dangote 3X Cement 50kg"** (set quantity to 50 bags).
+   - **Observe:** Within **1–2 seconds**, the physical phone screen automatically updates showing 50 bags of cement, unit price `₦9,500 / bag`, and haulage fee without touching or pulling down to refresh!
+
+3. **Step 3: Phone to Web Live Cart Sync (0:40 - 1:05)**
+   - On the physical mobile phone, tap the `+` button in the cart to increment the quantity to **60 bags**.
+   - **Observe:** Within **1–2 seconds**, the computer browser's cart automatically updates to 60 bags and recalculates the subtotal authoritatively.
+   - On the phone, tap to add another material (e.g., "Tiger TMT Steel Rods 12mm").
+   - **Observe:** The new line item instantly appears on the computer monitor.
+
+4. **Step 4: Mobile Checkout & Cross-Device History (1:05 - 1:30)**
+   - On the phone, tap **"PROCEED TO CHECKOUT"**.
+   - Select Lagos/Abuja Metro delivery (flat ₦35,000 haulage), fill the address, and tap **"CONFIRM & PLACE ORDER"**.
+   - Show the generated order confirmation receipt (`BM-...`).
+   - Immediately refresh or navigate to `/orders` on the computer browser to show the new order in the order history.
 
 ---
 
 ## Testing & Verification
 
 ```bash
-# Web unit & integration tests (Vitest)
+# Web unit & integration tests (Vitest) - 64 passing tests
 npm test
 
-# TypeScript typecheck (Web)
+# TypeScript typecheck (Web) - 0 errors
 npm run typecheck
 
-# TypeScript typecheck (Mobile)
+# TypeScript typecheck (Mobile) - 0 errors
 cd mobile && npx tsc --noEmit
 
-# Code linting
+# Code linting (Next.js ESLint) - 0 warnings or errors
 npm run lint
 
 # Production compilation
@@ -228,6 +259,24 @@ npm run build
 ```
 
 Full physical device testing procedures and step-by-step verification checklists are documented in [`docs/device-test.md`](./docs/device-test.md).
+
+---
+
+## Submission Artifacts
+
+- **Production Web Application:** [https://shopfront-green.vercel.app](https://shopfront-green.vercel.app)
+- **Direct Android APK Download:** [buildmart.apk](https://expo.dev/artifacts/eas/VYWxmTjv3NRWLwYrT0EtEKtEeINQa6divQ2NxpMgwME.apk)
+- **GitHub Repository:** [https://github.com/Collinsthegreat/shopfront](https://github.com/Collinsthegreat/shopfront)
+- **Team Drongo Contribution PR:** [https://github.com/zedu-hng/zedu-fe/pull/365](https://github.com/zedu-hng/zedu-fe/pull/365)
+
+---
+
+## Contributor
+
+- **Name:** Abuchi Nwajagu Collins
+- **GitHub:** [@Collinsthegreat](https://github.com/Collinsthegreat)
+- **Track:** Mobile & Frontend Development (Stage 2)
+- **Team:** Team Drongo (Position #45)
 
 ---
 

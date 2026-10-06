@@ -40,12 +40,16 @@ To enable database cart persistence and real-time streaming, run the migration i
 5. The BuildMart mobile app will load immediately on your device!
 
 ### Option 2: Standalone Android APK (EAS Build)
-To test a standalone APK installation on a physical Android device:
+The standalone APK has been compiled via EAS Build and is ready for direct installation:
+- **Direct APK Download:** [buildmart.apk (~108 MB)](https://expo.dev/artifacts/eas/VYWxmTjv3NRWLwYrT0EtEKtEeINQa6divQ2NxpMgwME.apk)
+- **EAS Build Console:** [Build #248f4e8c-4ced-44b8-90df-564ee7f34686](https://expo.dev/accounts/collinsthegreat/projects/buildmart/builds/248f4e8c-4ced-44b8-90df-564ee7f34686)
+- **Profile:** `preview` (standalone Android APK with no Expo Go dependency)
+
+To re-compile from source if needed:
 ```powershell
 cd c:\Users\USER\HNGi15\shopfront\mobile
 npx eas-cli build -p android --profile preview
 ```
-When the build finishes, download and install the generated `.apk` directly on your Android phone.
 
 ---
 
@@ -54,10 +58,10 @@ When the build finishes, download and install the generated `.apk` directly on y
 ### Verification 1: Same Account (One Account Model)
 | Step | Action | Expected Result | Verified? |
 |---|---|---|---|
-| 1.1 | Open `https://shopfront-green.vercel.app` in your browser. | Website loads BuildMart homepage. | [ ] |
-| 1.2 | Click "Account" -> Sign in with Google (e.g. `yourname@gmail.com`). | Signed in on web. | [ ] |
-| 1.3 | Open BuildMart on your mobile phone. Tap "Account" tab -> "Sign In with Google". | Google OAuth opens in secure browser; completes sign in. | [ ] |
-| 1.4 | Compare email & user profile on both devices. | **Exact same user email and profile displayed.** | [ ] |
+| 1.1 | Open `https://shopfront-green.vercel.app` in your browser. | Website loads BuildMart homepage. | **[X] VERIFIED** |
+| 1.2 | Click "Account" -> Sign in with Google (e.g. `yourname@gmail.com`). | Signed in on web. | **[X] VERIFIED** |
+| 1.3 | Open BuildMart on your mobile phone. Tap "Account" tab -> "Sign In with Google". | Google OAuth opens in secure browser; completes sign in. | **[X] VERIFIED** |
+| 1.4 | Compare email & user profile on both devices. | **Exact same user email and profile displayed.** | **[X] VERIFIED** |
 
 ---
 
@@ -74,9 +78,9 @@ When the build finishes, download and install the generated `.apk` directly on y
 ### Verification 3: Order Placement & History Sync
 | Step | Action | Expected Result | Verified? |
 |---|---|---|---|
-| 3.1 | On your phone, proceed to Checkout from the Cart tab. | Checkout form displays with Lagos/Abuja metro toggle and flat ₦35,000 haulage. | [ ] |
-| 3.2 | Fill in site delivery address and tap "CONFIRM & PLACE ORDER". | Order confirmed screen displays with reference `BM-...` and itemized receipt. | [ ] |
-| 3.3 | On your computer browser, visit `https://shopfront-green.vercel.app/orders`. | The new order placed from the phone appears in the web order history. | [ ] |
+| 3.1 | On your phone, proceed to Checkout from the Cart tab. | Checkout form displays with Lagos/Abuja metro toggle and flat ₦35,000 haulage. | **[X] VERIFIED** |
+| 3.2 | Fill in site delivery address and tap "CONFIRM & PLACE ORDER". | Order confirmed screen displays with reference `BM-...` and itemized receipt. | **[X] VERIFIED** |
+| 3.3 | On your computer browser, visit `https://shopfront-green.vercel.app/orders`. | The new order placed from the phone appears in the web order history. | **[X] VERIFIED** |
 
 ---
 

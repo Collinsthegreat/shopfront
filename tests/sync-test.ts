@@ -12,10 +12,10 @@ async function runSyncVerification() {
   console.log('--- Starting Web & Mobile Live Cart Sync Verification ---');
 
   // Client A (Simulating Web Storefront)
-  const clientWeb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const clientWeb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY!);
 
   // Client B (Simulating Mobile Native App)
-  const clientMobile = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const clientMobile = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY!);
 
   // Find or create a user cart to test
   const { data: users, error: userErr } = await clientWeb.auth.admin.listUsers();
